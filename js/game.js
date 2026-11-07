@@ -1,5 +1,5 @@
 /* =====================================================================
-   PIRATES : SHIPPING LEGACY — MOTEUR DU PROTOTYPE 0.2
+   PIRATES : SHIPPING LEGACY — MOTEUR DU PROTOTYPE 0.3
    Ce fichier ne contient aucune valeur d'équilibrage : tout est lu
    dans js/config.js (window.CONFIG).
    ===================================================================== */
@@ -113,9 +113,44 @@ function occupation(ignorer) {
   S.cale.forEach((it) => { if (it.uid === ignorer) return; casesDe(it, it.x, it.y, it.rot).forEach(([x, y]) => { if (g[y] && x < n.colonnes) g[y][x] = it.uid; }); });
   return g;
 }
-function peutPlacer(it, x, y, rot, g) {
+/* Gravité : un item doit reposer sur le plancher ou sur d'autres items.
+   Avec cale.appuiCentre, son centre doit en plus se trouver au-dessus de ses appuis.
+   Les items "fixe" (planches) sont cloués à la coque : ils n'ont pas besoin d'appui et ne tombent jamais. */
+function appuiInfo(it, x, y, rot, g) {
+  const d = DB.items[it.id]; const n = navire(); const w = rot ? d.hauteur : d.largeur; const h = rot ? d.largeur : d.hauteur;
+  const bas = y + h;
+  if (bas >= n.rangees) return { contact: true, stable: true };
+  if (d.fixe) return { contact: false, stable: true };
+  const appuis = []; for (let i = 0; i < w; i++) if (g[bas] && g[bas][x + i]) appuis.push(x + i);
+  if (!appuis.length) return { contact: false, stable: false };
+  if (!C.cale.appuiCentre) return { contact: true, stable: true };
+  const centre = x + w / 2;
+  return { contact: true, stable: centre >= Math.min(...appuis) && centre <= Math.max(...appuis) + 1 };
+}
+function raisonPlacement(it, x, y, rot, g) {
   const n = navire(); g = g || occupation(it.uid);
-  return casesDe(it, x, y, rot).every(([cx, cy]) => cx >= 0 && cy >= 0 && cx < n.colonnes && cy < n.rangees && !g[cy][cx]);
+  for (const [cx, cy] of casesDe(it, x, y, rot)) { if (cx < 0 || cy < 0 || cx >= n.colonnes || cy >= n.rangees) return "hors"; if (g[cy][cx]) return "occupe"; }
+  return appuiInfo(it, x, y, rot, g).stable ? null : "appui";
+}
+function peutPlacer(it, x, y, rot, g) { return raisonPlacement(it, x, y, rot, g) === null; }
+function appliquerGravite(sansDegats) {
+  const chutes = []; let bouge = true; let garde = 0; const n = navire();
+  while (bouge && garde++ < 60) {
+    bouge = false;
+    const tri = [...S.cale].sort((a, b) => (b.y + dims(b).h) - (a.y + dims(a).h)); // du bas vers le haut
+    for (const it of tri) {
+      if (DB.items[it.id].fixe) continue;
+      const g = occupation(it.uid); let y = it.y;
+      while (!appuiInfo(it, it.x, y, it.rot, g).contact && casesDe(it, it.x, y + 1, it.rot).every(([cx, cy]) => cy < n.rangees && !g[cy][cx])) y++;
+      if (y !== it.y) { const c = chutes.find((k) => k[0] === it); if (c) c[1] += y - it.y; else chutes.push([it, y - it.y]); it.y = y; bouge = true; }
+    }
+  }
+  if (!sansDegats && chutes.length) {
+    let abimes = 0;
+    chutes.forEach(([it, r]) => { if (DB.items[it.id].fragile) { it.etat = clamp(it.etat - r * C.cale.degatsChuteParRangee, 0, 100); abimes++; } });
+    toast("⬇ " + chutes.length + " item(s) ont glissé vers le bas" + (abimes ? " · " + abimes + " fragile(s) abîmé(s)" : ""));
+  }
+  return chutes;
 }
 function placerAuto(it) {
   const n = navire(); const d = DB.items[it.id]; const g = occupation(it.uid);
@@ -126,8 +161,8 @@ function placerAuto(it) {
   }
   return false;
 }
-function versQuai(it) { S.cale = S.cale.filter((c) => c.uid !== it.uid); it.x = -1; it.y = -1; if (!S.quai.includes(it)) S.quai.push(it); }
-function retirer(it) { S.cale = S.cale.filter((c) => c.uid !== it.uid); S.quai = S.quai.filter((c) => c.uid !== it.uid); if (selection === it.uid) selection = null; }
+function versQuai(it) { const etaitEnCale = S.cale.includes(it); S.cale = S.cale.filter((c) => c.uid !== it.uid); it.x = -1; it.y = -1; if (!S.quai.includes(it)) S.quai.push(it); if (etaitEnCale) appliquerGravite(); }
+function retirer(it) { const etaitEnCale = S.cale.includes(it); S.cale = S.cale.filter((c) => c.uid !== it.uid); S.quai = S.quai.filter((c) => c.uid !== it.uid); if (selection === it.uid) selection = null; if (etaitEnCale) appliquerGravite(); }
 function dansCachette(it) {
   if (!aAmelio("cachette")) return false;
   const cs = navire().cachette.map((c) => c.join(","));
@@ -871,7 +906,7 @@ function rendreCale() {
   const cache = aAmelio("cachette") ? n.cachette.map((c) => c.join(",")) : [];
   for (let y = 0; y < n.rangees; y++) for (let x = 0; x < n.colonnes; x++) h += "<div class='case" + (y === n.rangees - 1 ? " humide" : "") + (n.colonnesVentilees.includes(x) ? " vent" : "") + (cache.includes(x + "," + y) ? " cache" : "") + "' style='left:" + x * cs + "px;top:" + y * cs + "px;width:" + cs + "px;height:" + cs + "px'></div>";
   S.cale.forEach((it) => { h += itemHtml(it, cs, it.x * cs, it.y * cs); });
-  h += "</div></div><div class='legende'><span class='tag bleu'>💧 fond humide</span><span class='tag'>▨ ventilé : ⏳ pourrit moins</span><span class='tag'>🔸 fragile : rien de lourd dessus</span>" + (cache.length ? "<span class='tag or'>🗝️ cachette</span>" : "") + "<span class='tag'>↻ double-tap ou 2ᵉ doigt</span></div>";
+  h += "</div></div><div class='legende'><span class='tag bleu'>💧 fond humide</span><span class='tag'>▨ ventilé : ⏳ pourrit moins</span><span class='tag'>🔸 fragile : rien de lourd dessus</span>" + (cache.length ? "<span class='tag or'>🗝️ cachette</span>" : "") + "<span class='tag'>⬇ tout repose sur un appui</span><span class='tag'>🪚 planche = étagère</span><span class='tag'>↻ double-tap ou 2ᵉ doigt</span></div>";
   h += "<div id='detail' class='bloc'></div>";
   if (S.ile) h += "<div class='quai-barre" + (S.quai.length ? "" : " vide") + "'><div class='tete'>⚓ Quai <span class='muted' style='font-family:Inter'>" + (S.quai.length ? S.quai.length + " item(s) à charger" : "") + "</span>" + (S.quai.length ? "<button class='primaire' id='bToutRanger'>Tout ranger</button>" : "") + "</div><div id='quai' class='" + (S.quai.length ? "" : "vide") + "' data-vide='Quai vide. Glissez un item ici pour le décharger.'>" + S.quai.map((it) => itemHtml(it, Math.min(cs, 44), null, null)).join("") + "</div></div>";
   p.innerHTML = h; p.scrollTop = scroll;
@@ -895,11 +930,13 @@ function itemHtml(it, cs, left, top) {
   const dest = S.voyage ? S.voyage.vers.ile : (destination && destination.ile) || S.ile;
   const badges = (d.fragile ? "🔸" : "") + (d.perissable ? "⏳" : "") + (d.craintEau ? "💧" : "") + (estInterdit(it.id, dest) ? "⚠️" : "") + (it.contrat ? "📜" : "");
   const coul = it.etat < 40 ? "#ff7b6b" : it.etat < 70 ? "#ffc562" : "#9be27a";
-  return "<div class='item" + (selection === it.uid ? " sel" : "") + (enRisque(it) ? " risque" : "") + "' data-uid='" + it.uid + "' style='" + pos + "width:" + (dm.w * cs - 4) + "px;height:" + (dm.h * cs - 4) + "px;margin:2px;background:" + d.couleur + "'><span class='badges'>" + badges + "</span><span class='ic'>" + d.icone + "</span><span class='nm'>" + (dm.w * cs > 70 ? esc(d.nom) : "") + "</span><div class='etat'><i style='width:" + it.etat + "%;background:" + coul + "'></i></div></div>";
+  return "<div class='item" + (d.fixe ? " planche" : "") + (selection === it.uid ? " sel" : "") + (enRisque(it) ? " risque" : "") + "' data-uid='" + it.uid + "' style='" + pos + "width:" + (dm.w * cs - 4) + "px;height:" + (dm.h * cs - 4) + "px;margin:2px;background:" + d.couleur + "'><span class='badges'>" + badges + "</span><span class='ic'>" + d.icone + "</span><span class='nm'>" + (dm.w * cs > 70 ? esc(d.nom) : "") + "</span><div class='etat'><i style='width:" + it.etat + "%;background:" + coul + "'></i></div></div>";
 }
 function risquesPosition(it) {
   const d = DB.items[it.id]; const r = [];
   if (it.x < 0) return r;
+  if (d.fixe) r.push(["pos", "🪚 Fixée à la coque : elle sert d'appui, même au-dessus du vide."]);
+  else if (!appuiInfo(it, it.x, it.y, it.rot, occupation(it.uid)).stable) r.push(["neg", "⬇ Mal calé : son centre n'est pas au-dessus d'un appui."]);
   if (d.craintEau && auFond(it)) r.push(["neg", "💧 Au fond de cale humide : il s'abîme chaque jour en mer."]);
   if (d.fragile) { const p = poidsAuDessus(it); if (p > C.cale.poidsFragile) r.push(["neg", "🔸 " + p + " kg posés dessus : il souffrira des chocs."]); else r.push(["pos", "🔸 Rien de lourd dessus : bien protégé."]); }
   if (d.perissable) r.push(ventile(it) ? ["pos", "▨ Zone ventilée : pourrit moins vite."] : ["", "⏳ Hors zone ventilée : pourrit à vitesse normale."]);
@@ -931,8 +968,8 @@ function rendreDetail() {
 function animerItem(uidItem, classe) { const el = document.querySelector("#p-cale .item[data-uid='" + uidItem + "']"); if (el) { el.classList.remove(classe); void el.offsetWidth; el.classList.add(classe); } }
 function pivoter(it) {
   if (!S.cale.includes(it)) { it.rot = !it.rot; rendreCale(); animerItem(it.uid, "pose"); return; }
-  if (peutPlacer(it, it.x, it.y, !it.rot)) { it.rot = !it.rot; rendreTout(); sauver(); animerItem(it.uid, "pose"); vibrer(10); }
-  else { toast("Pas la place de le pivoter ici."); animerItem(it.uid, "refus"); }
+  if (peutPlacer(it, it.x, it.y, !it.rot)) { it.rot = !it.rot; appliquerGravite(); rendreTout(); sauver(); animerItem(it.uid, "pose"); vibrer(10); }
+  else { toast(raisonPlacement(it, it.x, it.y, !it.rot) === "appui" ? "Une fois pivoté, il n'aurait plus d'appui." : "Pas la place de le pivoter ici."); animerItem(it.uid, "refus"); }
 }
 
 /* ---------- Glisser-déposer (souris et tactile) ---------- */
@@ -974,8 +1011,9 @@ function pendantGlisse(ev) {
   const dedans = ev.clientX >= gr.left - cs && ev.clientX <= gr.right + cs && ev.clientY >= gr.top - cs && ev.clientY <= gr.bottom + cs;
   if (!g.apercu) { g.apercu = document.createElement("div"); g.apercu.className = "apercu"; grille.appendChild(g.apercu); }
   if (dedans) {
-    const ok = peutPlacer(g.it, gx, gy, g.it.rot);
+    const raison = raisonPlacement(g.it, gx, gy, g.it.rot); const ok = !raison;
     let classe = ok ? "ok" : "non";
+    g.apercu.innerHTML = raison === "appui" ? "<span>⬇ sans appui</span>" : "";
     if (ok) { const t = Object.assign({}, g.it, { x: gx, y: gy }); if ((d.craintEau && auFond(t)) || (d.fragile && poidsAuDessus(t) > C.cale.poidsFragile)) classe = "risque"; }
     g.apercu.className = "apercu " + classe; g.apercu.style.display = "block";
     g.apercu.style.left = gx * cs + "px"; g.apercu.style.top = gy * cs + "px"; g.apercu.style.width = w + "px"; g.apercu.style.height = h + "px";
@@ -999,6 +1037,7 @@ function finGlisse(ev) {
   let resultat = "refus";
   if (g.cible) {
     g.it.x = g.cible.x; g.it.y = g.cible.y; S.quai = S.quai.filter((q) => q.uid !== g.it.uid); if (!S.cale.includes(g.it)) S.cale.push(g.it); resultat = "pose"; vibrer(12);
+    appliquerGravite();
   } else if (g.surQuai && S.ile) { versQuai(g.it); resultat = "pose"; }
   else g.it.rot = g.rot0;
   selection = g.it.uid; rendreTout(); sauver(); animerItem(g.it.uid, resultat);
@@ -1133,14 +1172,14 @@ let minuteurToast = null;
 function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.add("vu"); clearTimeout(minuteurToast); minuteurToast = setTimeout(() => el.classList.remove("vu"), 2400); }
 
 async function menu() {
-  const r = await modale({ titre: "Menu", icone: "☰", html: "<p class='muted'>Prototype 0.2 · la partie est sauvegardée automatiquement dans ce navigateur.</p>", boutons: [{ t: "Reprendre", primaire: true }, { t: "Comment jouer" }, { t: "Nouvelle partie" }] });
+  const r = await modale({ titre: "Menu", icone: "☰", html: "<p class='muted'>Prototype 0.3 · la partie est sauvegardée automatiquement dans ce navigateur.</p>", boutons: [{ t: "Reprendre", primaire: true }, { t: "Comment jouer" }, { t: "Nouvelle partie" }] });
   if (r === 1) aide();
   if (r === 2) { const c = await modale({ titre: "Nouvelle partie ?", icone: "⚠️", theme: "echec", html: "<p>La partie en cours sera effacée.</p>", boutons: [{ t: "Recommencer", primaire: true }, { t: "Annuler" }] }); if (c === 0) { nouvellePartie(); destination = null; selection = null; enPause = true; vuePort = "accueil"; precedent = null; rendreTout(); afficherPanneau("p-port"); } }
 }
 function aide() {
   return modale({ titre: "Comment jouer", icone: "🧭", theme: "mer", html: "<ul>" +
     "<li><b>⚓ Port</b> : chaque lieu a son rôle. Capitainerie pour les contrats, Marché pour acheter et vendre, Taverne pour les rumeurs et les recrues. Ce que vous recevez arrive sur le <b>quai</b>.</li>" +
-    "<li><b>📦 Cale</b> : glissez les items du quai vers la grille, ou utilisez « Tout ranger ». Pour pivoter : double-tap, un 2ᵉ doigt pendant le glisser, ou la touche R. Un <b>!</b> orange signale un item mal placé.</li>" +
+    "<li><b>📦 Cale</b> : glissez les items du quai vers la grille, ou utilisez « Tout ranger ». Pour pivoter : double-tap, un 2ᵉ doigt pendant le glisser, ou la touche R. Un <b>!</b> orange signale un item mal placé. Chaque item doit reposer sur le plancher ou sur un autre item : achetez des <b>planches</b> au marché pour créer des étagères et surélever la marchandise.</li>" +
     "<li><b>🗺️ Carte</b> : touchez une île pour y aller, ou la mer et le brouillard pour explorer.</li>" +
     "<li><b>⛵ En mer</b> : ⏸ x1 x2 x4 règlent le temps. L'équipage mange 1 ration par jour. Les événements mettent le jeu en pause.</li>" +
     "<li><b>⚠️ Contrebande</b> : très rentable là où elle est interdite, mais gare aux inspections.</li>" +
@@ -1157,14 +1196,14 @@ function boucleAffichage(dt) {
 function demarrer() {
   document.querySelectorAll("#onglets button").forEach((b) => b.onclick = () => afficherPanneau(b.dataset.p));
   const reprise = charger();
-  if (!reprise) nouvellePartie();
+  if (!reprise) nouvellePartie(); else appliquerGravite(true); // anciennes sauvegardes : les items en l'air retombent sans dégât
   if (S.voyage) enPause = true;
   rendreTout(); afficherPanneau("p-port");
   let largeurPrec = window.innerWidth;
   window.addEventListener("resize", () => { if (glisse || Math.abs(window.innerWidth - largeurPrec) < 20) return; largeurPrec = window.innerWidth; rendreTout(); });
   requestAnimationFrame(boucle);
   if (!reprise) aide();
-  window.__jeu = { get S() { return S; }, DB, competence, vitesseNavire, avancer, arriver, finDeJournee, lancerEvenement, naufrage, rendreTout };
+  window.__jeu = { get S() { return S; }, DB, competence, vitesseNavire, avancer, arriver, finDeJournee, lancerEvenement, naufrage, rendreTout, raisonPlacement, appliquerGravite, creerItem, retirer, placerAuto };
 }
 demarrer();
 })();

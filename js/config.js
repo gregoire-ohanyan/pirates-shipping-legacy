@@ -1,5 +1,5 @@
 /* =====================================================================
-   PIRATES : SHIPPING LEGACY — FICHIER DE PARAMÈTRES (prototype 0.1)
+   PIRATES : SHIPPING LEGACY — FICHIER DE PARAMÈTRES (prototype 0.3)
    ---------------------------------------------------------------------
    Tout l'équilibrage du jeu se règle ICI, à la main.
    Le moteur (game.js) ne contient aucune valeur de jeu : il lit ce fichier.
@@ -49,6 +49,8 @@ window.CONFIG = {
      craintEau         : true = abîmé par l'humidité du fond de cale et les voies d'eau
      rations           : si > 0, l'item est un vivre : nombre de rations qu'il contient
      frais             : true = vivre frais qui évite le scorbut
+     fixe              : true = fixé à la coque (planches) : n'a pas besoin d'appui, ne tombe jamais
+                         et sert d'appui aux items posés dessus
      couleur           : couleur d'affichage dans la cale
      icone             : emoji affiché sur l'item
      (La contrebande dépend de chaque île : voir "interdits" dans "iles")
@@ -69,6 +71,9 @@ window.CONFIG = {
     // --- Vivres (se consomment : 1 ration par marin et par jour) ---
     { id: "biscuits",  nom: "Biscuits de mer",       largeur: 1, hauteur: 1, poids: 3,  prix: 8,   fragile: false, perissable: 0,  craintEau: true,  rations: 10, frais: false, couleur: "#c9a86a", icone: "🍘" },
     { id: "fruits",    nom: "Vivres frais",          largeur: 1, hauteur: 1, poids: 3,  prix: 10,  fragile: false, perissable: 10, craintEau: false, rations: 6,  frais: true,  couleur: "#6aa84f", icone: "🥥" },
+    // --- Planches (étagères fixées à la coque, pour surélever la marchandise) ---
+    { id: "planche",   nom: "Planche",               largeur: 2, hauteur: 1, poids: 2,  prix: 6,   fragile: false, perissable: 0,  craintEau: false, fixe: true, couleur: "#a9784a", icone: "🪚" },
+    { id: "planche_longue", nom: "Longue planche",   largeur: 3, hauteur: 1, poids: 3,  prix: 9,   fragile: false, perissable: 0,  craintEau: false, fixe: true, couleur: "#9a6b40", icone: "🪚" },
     // --- Objets spéciaux (non achetables : "achetable: false") ---
     { id: "coffre",    nom: "Coffre au trésor",      largeur: 2, hauteur: 2, poids: 16, prix: 700, fragile: false, perissable: 0,  craintEau: false, couleur: "#c8a03a", icone: "💰", achetable: false }
   ],
@@ -263,7 +268,9 @@ window.CONFIG = {
     ventilation: 0.5,           // multiplicateur de pourriture dans une colonne ventilée
     climatTropical: 1.3,        // multiplicateur de pourriture en climat tropical
     humiditeFondParJour: 1.5,   // état perdu par jour par un item "craintEau" posé au fond de cale
-    desequilibreMax: 0.25       // perte de vitesse maximale si toute la charge est d'un seul côté
+    desequilibreMax: 0.25,      // perte de vitesse maximale si toute la charge est d'un seul côté
+    appuiCentre: true,          // true = le centre d'un item doit être au-dessus de ses appuis ; false = un seul point d'appui suffit
+    degatsChuteParRangee: 10    // état perdu par un item fragile qui tombe, par rangée de chute
   },
 
   /* ------------------------------------------------------------------

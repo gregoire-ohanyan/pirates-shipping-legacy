@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icones/favicon.png">
 <link rel="apple-touch-icon" href="icones/apple-touch-icon.png">
-<title>Pirates : Shipping Legacy — Prototype 0.2</title>
+<title>Pirates : Shipping Legacy — Prototype 0.3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -174,10 +174,13 @@ details.journal .liste div{padding:4px 0;border-bottom:1px dotted var(--parchemi
 @keyframes pose{0%{transform:scale(1.12)}60%{transform:scale(.96)}100%{transform:scale(1)}}
 .item.refus{animation:refus .35s}
 @keyframes refus{20%,60%{transform:translateX(-5px)}40%,80%{transform:translateX(5px)}}
-.apercu{position:absolute;border-radius:7px;pointer-events:none;z-index:2;transition:left .06s,top .06s}
+.apercu{position:absolute;border-radius:7px;pointer-events:none;z-index:2;transition:left .04s,top .04s}
 .apercu.ok{background:rgba(120,220,120,.35);border:2px solid #7bd67b}
 .apercu.risque{background:rgba(240,170,60,.42);border:2px solid #f0a83c}
 .apercu.non{background:rgba(230,80,70,.42);border:2px solid #e65046}
+.apercu span{position:absolute;left:50%;top:calc(100% + 3px);transform:translateX(-50%);z-index:5;background:rgba(20,10,5,.78);color:#fff;font-size:10.5px;font-weight:600;padding:1px 6px;border-radius:6px;white-space:nowrap}
+.item.planche{background:repeating-linear-gradient(90deg,#b07f50 0 22px,#8c6239 22px 24px) !important;border-color:#4e321c;box-shadow:inset 0 3px 0 rgba(255,230,190,.35),inset 0 -4px 6px rgba(0,0,0,.25)}
+.item.planche .etat{display:none}
 .legende{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;margin:2px 0 10px}
 #detail{min-height:54px}
 #detail .actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}

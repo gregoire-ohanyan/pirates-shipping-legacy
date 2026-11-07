@@ -18,12 +18,13 @@ Le jeu s'ouvre alors en plein écran comme une application. Il fonctionne hors l
 | `manifest.webmanifest` | Nom, icônes et couleurs de l'application installée |
 | `sw.js` | Mise en cache pour jouer hors ligne |
 | `icones/` | Icônes de l'application |
+| `CHANGELOG.md` | Liste des modifications de chaque version |
 
 ## Modifier l'équilibrage
 
 1. Ouvrez `js/config.js` (directement sur GitHub avec le crayon ✏️, ou en local).
 2. Changez les valeurs : chaque bloc est commenté en français. Pour ajouter une marchandise, une quête ou un événement, copiez un bloc existant et changez son `id`.
-3. Dans `sw.js`, augmentez `VERSION` (par exemple `psl-0.2.1`) pour que les téléphones récupèrent la nouvelle version.
+3. Dans `sw.js`, augmentez `VERSION` (par exemple `psl-0.3.1`) et ajoutez une entrée dans `CHANGELOG.md` pour que les téléphones récupèrent la nouvelle version.
 4. Enregistrez (commit). La page est mise à jour en une à deux minutes.
 5. Dans le jeu : menu ☰ → *Nouvelle partie* pour repartir avec les nouvelles valeurs de départ.
 
