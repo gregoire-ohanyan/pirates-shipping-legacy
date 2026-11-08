@@ -1,5 +1,5 @@
 /* =====================================================================
-   PIRATES : SHIPPING LEGACY — FICHIER DE PARAMÈTRES (prototype 0.4)
+   PIRATES : SHIPPING LEGACY — FICHIER DE PARAMÈTRES (prototype 0.5)
    ---------------------------------------------------------------------
    Tout l'équilibrage du jeu se règle ICI, à la main.
    Le moteur (game.js) ne contient aucune valeur de jeu : il lit ce fichier.
@@ -225,6 +225,7 @@ window.CONFIG = {
       ] },
 
     { id: "goelette", nom: "Goélette", nomParDefaut: "La Mouette", silhouette: "goelette", couleurCoque: "#2f5d4e",
+      requiert: { faction: "couronne", reputation: 20 }, // en vente seulement si la Couronne vous estime assez
       chargeMax: 110, vitesse: 15, coqueMax: 160, equipageMax: 6, canons: 6, emplacements: 3, prix: 1800,
       coupe: { hauteur: 340, pont: 140, quille: 326 },
       salles: [
@@ -354,7 +355,7 @@ window.CONFIG = {
     retourParJour: 0.05,       // les prix reviennent de 5 % par jour vers la normale
     bonusCommerce: 0.06,       // prix améliorés de 6 % par point de compétence "commerce"
     reparationParPoint: 2,     // or par point de coque réparé
-    reputationPrix: 0.002      // prix améliorés de 0,2 % par point de réputation sur l'île
+    reputationPrix: 0          // (remplacé par les paliers de réputation, voir "paliersReputation")
   },
 
   /* ------------------------------------------------------------------
@@ -362,14 +363,14 @@ window.CONFIG = {
      ------------------------------------------------------------------ */
   contrebande: {
     bonusCommerce: 0.15,       // inspection réduite de 15 % par point de "commerce"
-    mefianceInspection: 0.006, // +0,6 % d'inspection par point de méfiance de la faction
+    mefianceInspection: 0,     // (remplacé par les niveaux de méfiance, voir "mefiance")
     cachetteDiscretion: 0.85,  // chance qu'un item rangé dans la cachette ne soit pas trouvé
     discretionNormale: 0.15,   // chance qu'un item hors cachette ne soit pas trouvé
     amendeParValeur: 0.5,      // amende = valeur des items x 0.5 x sévérité de la faction
     reputationIle: -12,
     reputationFaction: -6,
     mefianceGain: 20,
-    mefianceBaisseParJour: 0.5,
+    mefianceBaisseParJour: 1,  // la méfiance de chaque faction baisse de 1 point par jour
     potDeVin: 40,              // or proposé pour corrompre un inspecteur
     nuitInspection: 0.6        // les inspections à l'arrivée sont x 0.6 de nuit
   },
@@ -444,7 +445,17 @@ window.CONFIG = {
     { id: "q_mousquets", type: "livraison", titre: "Armes pour la Confrérie",
       origine: "hautegarde", destination: "criquenoire", item: "mousquets", quantite: 2, delaiJours: 9, etatMin: 60,
       recompense: 480, reputation: 15, prerequis: { quetes: ["q_rumeur_crique"] },
-      texte: "Un officier corrompu vous confie des mousquets à livrer discrètement à la Crique Noire." }
+      texte: "Un officier corrompu vous confie des mousquets à livrer discrètement à la Crique Noire." },
+
+    { id: "q_epices_bal", type: "livraison", titre: "Des épices pour le bal",
+      origine: "vasque", destination: "hautegarde", item: "epices", quantite: 2, delaiJours: 7, etatMin: 80,
+      recompense: 300, reputation: 12, prerequis: { quetes: ["q_premier_rhum"] },
+      texte: "Ravi de son rhum, le gouverneur de Hautegarde commande maintenant les épices du Comptoir de Vasque pour son banquet." },
+
+    { id: "q_soie_robe", type: "livraison", titre: "Soie pour la robe",
+      origine: "vasque", destination: "lunebaie", item: "soie", quantite: 2, delaiJours: 8, etatMin: 85,
+      recompense: 320, reputation: 12, prerequis: { quetes: ["q_porcelaine"] },
+      texte: "La mariée de Lunebaie veut une robe de soie : deux rouleaux, impeccables. La soie craint l'eau !" }
   ],
 
   /* ------------------------------------------------------------------
@@ -597,6 +608,165 @@ window.CONFIG = {
           echec:  { blesse: 25, moral: -10, texte: "Un éboulement ! Le coffre reste introuvable… pour cette fois." } },
         { texte: "Repartir, l'île est maudite", test: null, succes: { moral: -5, texte: "Les superstitieux soufflent de soulagement." } }
       ] }
+  ],
+
+  /* ------------------------------------------------------------------
+     PALIERS DE RÉPUTATION (par île). Chaque palier commence à "min" (de −100 à 100).
+     effets :
+       prix        : multiplicateur des prix d'achat (et diviseur des prix de vente)
+       contrats    : false = aucun contrat ni quête proposé
+       contratsBonus : contrats aléatoires en plus à chaque escale
+       recompense  : multiplicateur des récompenses de contrat
+       reparation  : multiplicateur du coût des réparations
+       inspection  : multiplicateur de la chance d'inspection, ou "systematique"
+       rares       : chance en plus d'un contrat rare à chaque escale
+       recrues     : recrues en plus proposées à la taverne
+       taxeEntree  : or payé à chaque arrivée dans le port
+     ------------------------------------------------------------------ */
+  paliersReputation: [
+    { id: "hostile", nom: "Hostile", min: -100, couleur: "#b23a2e", effets: { prix: 1.25, contrats: false, inspection: "systematique", taxeEntree: 40 }, resume: "Taxe d'entrée 40 or, prix +25 %, aucun contrat, inspection systématique" },
+    { id: "mefiant", nom: "Méfiant", min: -39, couleur: "#c47a1a", effets: { prix: 1.10, contrats: true, quetes: false, inspection: 1.5 }, resume: "Prix +10 %, pas de quête, inspections ×1,5" },
+    { id: "inconnu", nom: "Inconnu", min: -9, couleur: "#8a7a5e", effets: {}, resume: "Situation de base" },
+    { id: "connu", nom: "Connu", min: 10, couleur: "#5b8a3a", effets: { prix: 0.97, contratsBonus: 1 }, resume: "1 contrat de plus, prix −3 %" },
+    { id: "estime", nom: "Estimé", min: 30, couleur: "#3f8a4f", effets: { prix: 0.97, contratsBonus: 1, recompense: 1.15, reparation: 0.8, rares: 0.2, recrues: 1 }, resume: "Contrats +15 %, réparations −20 %, contrats rares plus fréquents, une recrue de plus" },
+    { id: "notable", nom: "Notable", min: 60, couleur: "#b8902e", effets: { prix: 0.92, contratsBonus: 1, recompense: 1.15, reparation: 0.8, rares: 0.35, recrues: 1, inspection: 0.5 }, resume: "Prix −8 %, inspections ×0,5, contrats rares encore plus fréquents" }
+  ],
+
+  /* ------------------------------------------------------------------
+     EFFETS DE FACTION. Actif quand la réputation de faction atteint "seuil"
+     (seuil positif : atteint ou dépassé ; seuil négatif : atteint ou en dessous).
+     effet : "info" (texte seulement), "lettreDeMarque", "patrouilles" (x valeur), "contratsBonus" (x valeur),
+             "coffrePartout", "boycott", "recrutement" (x valeur du prix), "vivres" (x valeur du prix),
+             "pasDeRecrues", "marcheNoir" (x valeur du prix de vente), "pavillonAmi" (chance d'être épargné),
+             "pirates" (x valeur de la fréquence des navires hostiles)
+     ------------------------------------------------------------------ */
+  factionsPaliers: [
+    { faction: "couronne",  seuil: 20,  effet: "info",            texte: "La goélette est en vente au chantier de Hautegarde" },
+    { faction: "couronne",  seuil: 40,  effet: "lettreDeMarque",  texte: "Lettre de marque : les patrouilles de la Couronne ne vous arrêtent plus" },
+    { faction: "couronne",  seuil: -30, effet: "patrouilles", valeur: 2, texte: "Patrouilles de la Couronne 2 fois plus fréquentes" },
+    { faction: "compagnie", seuil: 20,  effet: "contratsBonus", valeur: 1.25, texte: "Contrats au départ de ses comptoirs payés +25 %" },
+    { faction: "compagnie", seuil: 40,  effet: "coffrePartout",   texte: "Votre coffre est accessible dans tous les ports" },
+    { faction: "compagnie", seuil: -30, effet: "boycott",         texte: "Ses comptoirs refusent de commercer avec vous" },
+    { faction: "colonies",  seuil: 20,  effet: "recrutement", valeur: 0.5, texte: "Recrutement à moitié prix dans ses îles" },
+    { faction: "colonies",  seuil: 40,  effet: "vivres", valeur: 0.7, texte: "Vivres −30 % partout" },
+    { faction: "colonies",  seuil: -30, effet: "pasDeRecrues",    texte: "Plus personne ne veut embarquer dans ses îles" },
+    { faction: "confrerie", seuil: 20,  effet: "marcheNoir", valeur: 1.2, texte: "La contrebande se revend +20 %" },
+    { faction: "confrerie", seuil: 40,  effet: "pavillonAmi", valeur: 0.5, texte: "Pavillon ami : une chance sur deux qu'un navire pirate vous laisse passer" },
+    { faction: "confrerie", seuil: -30, effet: "pirates", valeur: 1.5, texte: "Les navires pirates vous cherchent : rencontres ×1,5" }
+  ],
+  rivalites: { taux: 0.25, paires: [["couronne", "confrerie"], ["compagnie", "colonies"]] }, // un gain chez l'une retire 25 % de ce gain chez l'autre
+
+  /* ------------------------------------------------------------------
+     MÉFIANCE (par faction, de 0 à 100) : niveaux et effets
+     inspection : multiplicateur de la chance d'inspection, ou "systematique"
+     cachette   : multiplicateur de la discrétion de la contrebande (fouille minutieuse)
+     patrouilles: multiplicateur de la fréquence des patrouilles de cette faction
+     ------------------------------------------------------------------ */
+  mefiance: {
+    niveaux: [
+      { id: "calme",        nom: "Calme",             min: 0,  couleur: "#3f8a4f", inspection: 1 },
+      { id: "attentive",    nom: "Attentive",         min: 20, couleur: "#c4a21a", inspection: 1.3 },
+      { id: "soupconneuse", nom: "Soupçonneuse",      min: 50, couleur: "#c47a1a", inspection: 1.7, cachette: 0.6 },
+      { id: "recherche",    nom: "Avis de recherche", min: 80, couleur: "#b23a2e", inspection: "systematique", cachette: 0.6, patrouilles: 2 }
+    ]
+  },
+
+  /* ------------------------------------------------------------------
+     COSMÉTIQUES (gagnés avec les jalons ; "base: true" = disponible dès le départ)
+     ------------------------------------------------------------------ */
+  cosmetiques: {
+    couleurs: [
+      { id: "modele", nom: "Couleur du modèle", couleur: null, base: true },
+      { id: "brique", nom: "Rouge brique", couleur: "#8a2f2f", base: true },
+      { id: "corail", nom: "Corail", couleur: "#c4573a" },
+      { id: "nuit",   nom: "Bleu nuit", couleur: "#1f3a5f" },
+      { id: "or",     nom: "Dorure", couleur: "#b8902e" },
+      { id: "ivoire", nom: "Ivoire", couleur: "#d9ccb0" },
+      { id: "ebene",  nom: "Ébène", couleur: "#1d1612" }
+    ],
+    pavillons: [
+      { id: "marchand", nom: "Marchand", couleurs: ["#3f8a4f", "#3f8a4f"], base: true },
+      { id: "vagues",   nom: "Vagues", couleurs: ["#2f5d9e", "#fbeed0"] },
+      { id: "soleil",   nom: "Soleil", couleurs: ["#e7b92f", "#8a2f2f"] },
+      { id: "etoile",   nom: "Étoile", couleurs: ["#7a3e6e", "#e7c977"] },
+      { id: "crane",    nom: "Crâne", couleurs: ["#151515", "#eeeeee"] }
+    ]
+  },
+
+  /* ------------------------------------------------------------------
+     JALONS (conservés d'une génération à l'autre)
+     condition : { type, valeur }
+       "stat"           : statistique de la partie ("livraisons", "livraisonsATemps", "livraisonsParfaites",
+                          "ventesOr", "joursMer", "mouillages", "inspectionsEchappees", "tresors", "naufrages") ; champ "stat"
+       "ilesConnues", "toutesIles", "fortune" (or à bord + coffre), "navire" (champ "navire"),
+       "equipageComplet", "generation", "palier" (champ "palier" : une île à ce palier)
+     recompense : { or, couleur, pavillon, titre }
+     ------------------------------------------------------------------ */
+  jalons: [
+    { id: "premier_contrat", nom: "Premier contrat", description: "Livrer un premier contrat.", condition: { type: "stat", stat: "livraisons", valeur: 1 }, recompense: { or: 30, titre: "Marchand débutant" } },
+    { id: "fiable",          nom: "Marchand fiable", description: "Livrer 10 contrats dans les délais.", condition: { type: "stat", stat: "livraisonsATemps", valeur: 10 }, recompense: { titre: "Marchand fiable", pavillon: "vagues" } },
+    { id: "arrimeur",        nom: "Arrimeur hors pair", description: "Réussir 5 livraisons parfaites (95 % d'état ou plus).", condition: { type: "stat", stat: "livraisonsParfaites", valeur: 5 }, recompense: { titre: "Arrimeur hors pair", couleur: "corail" } },
+    { id: "bourse",          nom: "Bourse pleine", description: "Posséder 1 000 or (à bord et au coffre).", condition: { type: "fortune", valeur: 1000 }, recompense: { couleur: "or" } },
+    { id: "negociant",       nom: "Négociant", description: "Vendre pour 5 000 or de marchandises.", condition: { type: "stat", stat: "ventesOr", valeur: 5000 }, recompense: { titre: "Négociant", pavillon: "soleil" } },
+    { id: "cartographe",     nom: "Cartographe", description: "Découvrir 5 îles.", condition: { type: "ilesConnues", valeur: 5 }, recompense: { titre: "Cartographe", couleur: "nuit" } },
+    { id: "terra",           nom: "Terra cognita", description: "Découvrir toutes les îles de la région.", condition: { type: "toutesIles" }, recompense: { titre: "Maître de l'archipel", pavillon: "etoile" } },
+    { id: "explorateur",     nom: "Explorateur", description: "Jeter l'ancre 3 fois en eaux inconnues.", condition: { type: "stat", stat: "mouillages", valeur: 3 }, recompense: { titre: "Explorateur" } },
+    { id: "goelette",        nom: "Nouvelle coque", description: "Acheter une goélette.", condition: { type: "navire", navire: "goelette" }, recompense: { couleur: "ivoire", or: 100 } },
+    { id: "vieux_loup",      nom: "Vieux loup de mer", description: "Passer 100 jours en mer.", condition: { type: "stat", stat: "joursMer", valeur: 100 }, recompense: { titre: "Vieux loup de mer" } },
+    { id: "equipage",        nom: "Équipage au complet", description: "Remplir tous les postes d'un navire d'au moins 3 marins.", condition: { type: "equipageComplet" }, recompense: { titre: "Capitaine respecté" } },
+    { id: "passe_muraille",  nom: "Passe-muraille", description: "Échapper 5 fois à une inspection avec de la contrebande à bord.", condition: { type: "stat", stat: "inspectionsEchappees", valeur: 5 }, recompense: { titre: "Passe-muraille", pavillon: "crane" } },
+    { id: "notable",         nom: "Notable", description: "Devenir Notable sur une île.", condition: { type: "palier", palier: "notable" }, recompense: { titre: "Notable de l'archipel" } },
+    { id: "chasseur",        nom: "Chasseur de trésor", description: "Déterrer un coffre au trésor.", condition: { type: "stat", stat: "tresors", valeur: 1 }, recompense: { titre: "Chasseur de trésor", couleur: "ebene", or: 100 } },
+    { id: "survivant",       nom: "Survivant", description: "Survivre à un naufrage.", condition: { type: "stat", stat: "naufrages", valeur: 1 }, recompense: { titre: "Rescapé" } },
+    { id: "dynastie",        nom: "Dynastie", description: "Atteindre la 3e génération de capitaines.", condition: { type: "generation", valeur: 3 }, recompense: { titre: "Dynastie des mers" } }
+  ],
+
+  /* ------------------------------------------------------------------
+     MARCHÉ VIVANT : pénuries et abondances temporaires
+     ------------------------------------------------------------------ */
+  marche: {
+    evenementsParJour: 0.15,       // chance par jour qu'une pénurie ou une abondance se prépare quelque part
+    delai: [2, 5],                 // jours avant le début
+    duree: [5, 8],                 // durée en jours
+    penurie: 1.8,                  // multiplicateur de prix pendant une pénurie
+    abondance: 0.55,               // multiplicateur de prix pendant une abondance
+    items: ["sucre", "rhum", "tabac", "epices", "soie", "porcelaine", "bois", "poisson", "poudre", "mousquets", "fruitsvente"]
+  },
+  rumeurs: {
+    prix: 5,                       // prix d'un verre à la taverne
+    fiabilite: 0.7,                // chance qu'une rumeur soit vraie…
+    fiabiliteParCommerce: 0.1      // … + 10 % par point de compétence "commerce" (95 % au plus)
+  },
+  contratsRares: {
+    chance: 0.2,                   // chance d'un contrat rare à chaque escale (+ bonus du palier de réputation)
+    multRecompense: 2.5,
+    multDelai: 0.8,                // délai plus serré
+    etatMin: 80,
+    items: ["porcelaine", "soie", "rhum", "epices", "lingots"]
+  },
+  livraisonParfaite: { seuil: 95, bonus: 0.2 }, // +20 % si la marchandise arrive à 95 % d'état ou plus
+
+  /* ------------------------------------------------------------------
+     NOTE D'ARRIMAGE (de A à E) : 100 points moins les pénalités
+     ------------------------------------------------------------------ */
+  noteArrimage: {
+    parItemARisque: 12,            // item au fond humide ou fragile écrasé
+    parItemMalCale: 10,            // centre hors de ses appuis
+    assiette: 40,                  // x écart d'assiette (0 à 1)
+    stabilite: 30,                 // x (1 − stabilité)
+    surcharge: 30,
+    notes: [[90, "A"], [75, "B"], [60, "C"], [40, "D"], [0, "E"]]
+  },
+
+  /* ------------------------------------------------------------------
+     CHAÎNES DE QUÊTES (affichées dans l'onglet Quêtes)
+     etapes : { quete: id } ou { stat: id, valeur, texte } (étape réussie quand la statistique est atteinte)
+     ------------------------------------------------------------------ */
+  chaines: [
+    { id: "gouverneur", titre: "Les affaires du gouverneur", etapes: [{ quete: "q_premier_rhum" }, { quete: "q_epices_bal" }] },
+    { id: "mariage",    titre: "Le mariage de Lunebaie",     etapes: [{ quete: "q_porcelaine" }, { quete: "q_soie_robe" }] },
+    { id: "confrerie",  titre: "Les secrets de la Confrérie", etapes: [{ quete: "q_rumeur_crique" }, { quete: "q_mousquets" }] },
+    { id: "pendu",      titre: "Le trésor du Pendu",          etapes: [{ quete: "q_rumeur_crique" }, { quete: "q_carte_pendu" }, { stat: "tresors", valeur: 1, texte: "Déterrer le coffre sur l'Île du Pendu" }] }
   ],
 
   /* ------------------------------------------------------------------

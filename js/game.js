@@ -1,5 +1,5 @@
 /* =====================================================================
-   PIRATES : SHIPPING LEGACY — MOTEUR DU PROTOTYPE 0.4.2
+   PIRATES : SHIPPING LEGACY — MOTEUR DU PROTOTYPE 0.5
    Ce fichier ne contient aucune valeur d'équilibrage : tout est lu
    dans js/config.js (window.CONFIG).
    ===================================================================== */
@@ -66,7 +66,10 @@ function nouvellePartie() {
     voyage: null,
     joursEnMer: 0,
     journal: [],
-    generation: 1
+    generation: 1,
+    stats: {}, jalons: [], jalonsNonVus: 0,
+    cosmetiques: { couleurs: [], pavillons: [], titres: [] }, apparence: { couleur: "modele", pavillon: "marchand" }, titre: null,
+    marche: [], rumeurs: [], bilan: null
   };
   C.iles.forEach((i) => { S.reputation.iles[i.id] = 0; S.prixMod[i.id] = {}; });
   C.factions.forEach((f) => { S.reputation.factions[f.id] = 0; S.mefiance[f.id] = 0; });
@@ -95,6 +98,10 @@ function charger() {
 function migrer() {
   // Sauvegardes d'avant la 0.4.0 : une seule cale, marins sans salle, navire sans nom
   if (!S.navire.nom) S.navire.nom = navire().nomParDefaut;
+  // 0.5.0 : progression
+  S.stats = S.stats || {}; S.jalons = S.jalons || []; S.jalonsNonVus = S.jalonsNonVus || 0;
+  S.cosmetiques = S.cosmetiques || { couleurs: [], pavillons: [], titres: [] }; S.apparence = S.apparence || { couleur: "modele", pavillon: "marchand" };
+  if (S.titre === undefined) S.titre = null; S.marche = S.marche || []; S.rumeurs = S.rumeurs || []; if (S.bilan === undefined) S.bilan = null;
   S.cale.forEach((it) => { if (!it.cale || !salleDef(it.cale) || !salleDef(it.cale).cale) it.cale = calePrincipale(); });
   verifierPlacement();
 }
@@ -339,13 +346,164 @@ function rations() { return S.cale.reduce((s, it) => s + (it.r || 0), 0); }
 function joursDeVivres() { return S.equipage.length ? rations() / (S.equipage.length * C.equipage.rationsParMarinParJour) : 99; }
 function moralMoyen() { return S.equipage.reduce((s, m) => s + m.moral, 0) / Math.max(1, S.equipage.length); }
 
-/* ---------------- Réputation ---------------- */
+/* ---------------- Réputation, factions, méfiance ---------------- */
+function palierDe(v) { let p = C.paliersReputation[0]; C.paliersReputation.forEach((x) => { if (v >= x.min) p = x; }); return p; }
+function palierIle(ileId) { return palierDe(S.reputation.iles[ileId] || 0); }
+function effetPalier(ileId, k, def) { if (!ileId) return def; const e = palierIle(ileId).effets; return e[k] !== undefined ? e[k] : def; }
+function palierSuivant(v) { return C.paliersReputation.find((x) => x.min > v) || null; }
+function effetsFactionActifs(fid) { const v = S.reputation.factions[fid] || 0; return C.factionsPaliers.filter((p) => p.faction === fid && (p.seuil > 0 ? v >= p.seuil : v <= p.seuil)); }
+function effetFaction(fid, effet) { return effetsFactionActifs(fid).find((p) => p.effet === effet) || null; }
+function valeurFaction(fid, effet, def) { const e = effetFaction(fid, effet); return e ? (e.valeur !== undefined ? e.valeur : true) : def; }
+function effetQuelconque(effet) { for (const f of C.factions) { const e = effetFaction(f.id, effet); if (e) return e; } return null; }
+function rivale(fid) { const p = C.rivalites.paires.find((x) => x.includes(fid)); return p ? p.find((x) => x !== fid) : null; }
+function niveauMefiance(fid) { let n = C.mefiance.niveaux[0]; C.mefiance.niveaux.forEach((x) => { if ((S.mefiance[fid] || 0) >= x.min) n = x; }); return n; }
 function changerRep(ileId, v) {
-  if (!ileId) return; const i = DB.iles[ileId];
+  if (!ileId || !v) return; const i = DB.iles[ileId]; const avant = palierIle(ileId).id;
   S.reputation.iles[ileId] = clamp((S.reputation.iles[ileId] || 0) + v, -100, 100);
-  S.reputation.factions[i.faction] = clamp((S.reputation.factions[i.faction] || 0) + v * C.reputation.partageFaction, -100, 100);
+  const gf = v * C.reputation.partageFaction;
+  S.reputation.factions[i.faction] = clamp((S.reputation.factions[i.faction] || 0) + gf, -100, 100);
+  if (gf > 0) { const r = rivale(i.faction); if (r) S.reputation.factions[r] = clamp((S.reputation.factions[r] || 0) - gf * C.rivalites.taux, -100, 100); }
+  const apres = palierIle(ileId);
+  if (apres.id !== avant) { journal("⭐ <b>" + esc(i.nom) + "</b> : vous êtes désormais <b>" + esc(apres.nom) + "</b>."); toast("⭐ " + i.nom + " : " + apres.nom); }
 }
-const repTexte = (v) => (v >= 50 ? "Héros" : v >= 20 ? "Estimé" : v >= 5 ? "Connu" : v > -5 ? "Neutre" : v > -20 ? "Méfiant" : "Hostile");
+const repTexte = (v) => palierDe(v).nom;
+function marcheOuvert(ileId) { const i = DB.iles[ileId]; return !!(i && i.marche && !effetFaction(i.faction, "boycott")); }
+
+/* ---------------- Statistiques ---------------- */
+function stat(k, v) { S.stats[k] = (S.stats[k] || 0) + (v === undefined ? 1 : v); }
+
+/* ---------------- Marché vivant et rumeurs ---------------- */
+function ilesMarche(connuesSeulement) { return C.iles.filter((i) => i.marche && (!connuesSeulement || S.connues.includes(i.id))); }
+function creerEvenementMarche(connuesSeulement) {
+  const M = C.marche; const iles = ilesMarche(connuesSeulement); if (!iles.length) return null;
+  const debut = S.temps + alea(M.delai[0], M.delai[1]);
+  const e = { id: "m" + uid(), ile: choisir(iles).id, item: choisir(M.items), type: Math.random() < 0.5 ? "penurie" : "abondance", debut, fin: debut + alea(M.duree[0], M.duree[1]) };
+  S.marche.push(e); return e;
+}
+function majMarche() {
+  S.marche = S.marche.filter((e) => e.fin > S.temps);
+  if (Math.random() < C.marche.evenementsParJour) creerEvenementMarche(false);
+}
+function evenementMarche(ileId, itemId) { return (S.marche || []).find((x) => x.ile === ileId && x.item === itemId && x.debut <= S.temps && S.temps <= x.fin) || null; }
+function multMarche(ileId, itemId) { const e = evenementMarche(ileId, itemId); return e ? (e.type === "penurie" ? C.marche.penurie : C.marche.abondance) : 1; }
+function texteRumeur(r) {
+  const n = DB.items[r.item].nom.toLowerCase(); const ile = DB.iles[r.ile].nom;
+  return r.type === "penurie" ? "Les « " + n + " » vont manquer à " + ile + " : les prix vont s'envoler." : ile + " va crouler sous les « " + n + " » : les prix vont s'effondrer.";
+}
+function statutRumeur(r) {
+  if (r.statut === "confirmee") return ["pos", "✔ Confirmée"];
+  if (r.statut === "fausse") return ["neg", "✘ Fausse rumeur"];
+  if (S.temps < r.debut) return ["", "Dans ≈ " + Math.ceil(r.debut - S.temps) + " j, pendant ≈ " + Math.round(r.fin - r.debut) + " j"];
+  if (S.temps <= r.fin) return ["", "En ce moment, encore ≈ " + Math.ceil(r.fin - S.temps) + " j"];
+  return ["", "Passée"];
+}
+async function ecouterRumeur() {
+  const prix = C.rumeurs.prix; const cle = S.ile + ":" + Math.floor(S.temps);
+  if (S.or < prix) return toast("Pas assez d'or pour payer un verre.");
+  if (S.rumeurEscale === cle) return toast("Plus personne n'a de nouvelles aujourd'hui. Revenez demain.");
+  S.or -= prix; S.rumeurEscale = cle;
+  const fiab = Math.min(0.95, C.rumeurs.fiabilite + C.rumeurs.fiabiliteParCommerce * competence("commerce"));
+  const vraie = Math.random() < fiab; let e;
+  if (vraie) {
+    const deja = new Set(S.rumeurs.map((r) => r.ref));
+    const cand = S.marche.filter((x) => x.fin > S.temps && !deja.has(x.id) && S.connues.includes(x.ile) && x.ile !== S.ile);
+    e = cand.length ? choisir(cand) : creerEvenementMarche(true);
+  } else {
+    const iles = ilesMarche(true).filter((i) => i.id !== S.ile); const debut = S.temps + alea(C.marche.delai[0], C.marche.delai[1]);
+    e = { id: "f" + uid(), ile: choisir(iles.length ? iles : ilesMarche(true)).id, item: choisir(C.marche.items), type: Math.random() < 0.5 ? "penurie" : "abondance", debut, fin: debut + alea(C.marche.duree[0], C.marche.duree[1]) };
+  }
+  if (!e) return;
+  const r = { ref: e.id, ile: e.ile, item: e.item, type: e.type, debut: e.debut, fin: e.fin, vraie, jour: S.temps, statut: null };
+  S.rumeurs.unshift(r); S.rumeurs = S.rumeurs.slice(0, 12);
+  const qui = choisir(["Un vieux marin jure que", "La serveuse a entendu dire que", "Un capitaine de la Compagnie raconte que", "Un pêcheur éméché affirme que"]);
+  journal("👂 Rumeur : " + esc(texteRumeur(r)));
+  rendreTout(); sauver();
+  await modale({ titre: "Rumeur de taverne", icone: "🍺", theme: "tresor", html: "<p><i>" + esc(qui) + "…</i></p><p><b>" + esc(texteRumeur(r)) + "</b></p><p class='muted'>" + esc(statutRumeur(r)[1]) + ". Les rumeurs ne sont pas toujours vraies : un bon négociant au poste de capitaine en entend de plus fiables.</p>", boutons: [{ t: "Noter dans le journal", primaire: true }] });
+}
+
+/* ---------------- Note d'arrimage ---------------- */
+function noteArrimage() {
+  const N = C.noteArrimage; let s = 100; const det = [];
+  const risque = S.cale.filter(enRisque).length; if (risque) { s -= risque * N.parItemARisque; det.push(risque + " item(s) mal protégé(s)"); }
+  const mal = S.cale.filter((it) => !DB.items[it.id].fixe && !appuiInfo(it, it.cale, it.x, it.y, it.rot, occupation(it.cale, it.uid)).stable).length;
+  if (mal) { s -= mal * N.parItemMalCale; det.push(mal + " item(s) mal calé(s)"); }
+  const dq = Math.abs(desequilibre()); if (dq >= 0.15) { s -= dq * N.assiette; det.push("assiette déséquilibrée"); }
+  const st = stabilite(); s -= (1 - st) * N.stabilite; if (st < 0.5) det.push("stabilité faible");
+  if (ratioCharge() > 1) { s -= N.surcharge; det.push("surcharge"); }
+  s = clamp(arr(s), 0, 100);
+  return { score: s, lettre: N.notes.find(([min]) => s >= min)[1], details: det };
+}
+function moyenneEtat() { const its = S.cale.filter((it) => !DB.items[it.id].fixe && !(it.r > 0)); return its.length ? its.reduce((s, it) => s + it.etat, 0) / its.length : null; }
+
+/* ---------------- Bilan de traversée ---------------- */
+function nouveauBilan() { S.bilan = { depuis: S.ile, orDepart: S.or, tDepart: S.temps, note: noteArrimage(), etatDepart: moyenneEtat(), evts: 0, reussites: 0, livraisons: 0, parfaites: 0, gainLivraisons: 0, taxes: 0 }; }
+async function montrerBilan(i) {
+  const b = S.bilan; if (!b) return; S.bilan = null;
+  const gain = arr(S.or - b.orDepart); const jours = S.temps - b.tDepart; const etat = moyenneEtat();
+  const signe = (v) => (v >= 0 ? "+" : "−") + Math.abs(arr(v));
+  const L = ["⏳ " + jours.toFixed(1).replace(".", ",") + " jours de mer", "💰 Or " + signe(gain)];
+  if (b.livraisons) L.push("📜 " + b.livraisons + " livraison(s)" + (b.parfaites ? ", dont " + b.parfaites + " parfaite(s)" : ""));
+  if (etat !== null && b.etatDepart !== null) L.push("📦 État de la cargaison " + arr(etat) + " %" + (Math.abs(etat - b.etatDepart) >= 1 ? " (" + signe(etat - b.etatDepart) + ")" : ""));
+  L.push("📋 Note d'arrimage au départ : " + b.note.lettre);
+  L.push(b.evts ? "🌊 " + b.evts + " événement(s), " + b.reussites + " réussi(s)" : "🌊 Traversée sans incident");
+  if (b.taxes) L.push("🏛️ Taxe d'entrée −" + b.taxes);
+  let record = false; if (gain > 0 && gain > (S.stats.recordGain || 0)) { S.stats.recordGain = gain; record = true; }
+  await modale({ titre: "Bilan de la traversée", icone: record ? "🏆" : "📋", theme: record ? "tresor" : "mer",
+    html: "<p class='muted'>" + esc(b.depuis ? DB.iles[b.depuis].nom : "Le large") + " → " + esc(i.nom) + "</p><div class='gros-gain' style='color:" + (gain >= 0 ? "#6b4c0a" : "#b23a2e") + "'>" + signe(gain) + " 💰</div>" + (record ? "<p style='text-align:center;font-weight:700;color:#8a6a10'>🏆 Nouveau record de traversée !</p>" : ""),
+    chips: L, boutons: [{ t: "À terre !", primaire: true }] });
+}
+
+/* ---------------- Jalons et cosmétiques ---------------- */
+function progressionJalon(j) {
+  const c = j.condition; let v = 0, cible = c.valeur || 1;
+  switch (c.type) {
+    case "stat": v = S.stats[c.stat] || 0; break;
+    case "ilesConnues": v = S.connues.length; break;
+    case "toutesIles": v = S.connues.length; cible = C.iles.length; break;
+    case "fortune": v = S.or + S.coffre; break;
+    case "navire": v = S.navire.type === c.navire || S.stats["navire_" + c.navire] ? 1 : 0; cible = 1; break;
+    case "equipageComplet": v = navire().equipageMax >= 3 && S.equipage.length >= navire().equipageMax ? 1 : 0; cible = 1; break;
+    case "generation": v = S.generation; break;
+    case "palier": { const idx = C.paliersReputation.findIndex((p) => p.id === c.palier); v = Object.keys(S.reputation.iles).some((k) => C.paliersReputation.indexOf(palierIle(k)) >= idx) ? 1 : 0; cible = 1; break; }
+  }
+  return { v: Math.min(v, cible), cible, fait: S.jalons.includes(j.id) };
+}
+function texteRecompense(r) {
+  const t = [];
+  if (r.or) t.push("💰 " + r.or + " or");
+  if (r.couleur) { const c = C.cosmetiques.couleurs.find((x) => x.id === r.couleur); t.push("🎨 Coque « " + (c ? c.nom : r.couleur) + " »"); }
+  if (r.pavillon) { const p = C.cosmetiques.pavillons.find((x) => x.id === r.pavillon); t.push("🏳️ Pavillon « " + (p ? p.nom : r.pavillon) + " »"); }
+  if (r.titre) t.push("🎖️ Titre « " + r.titre + " »");
+  return t;
+}
+let fileJalons = [];
+function verifierJalons() {
+  const nouveaux = C.jalons.filter((j) => !S.jalons.includes(j.id) && (() => { const p = progressionJalon(j); return p.v >= p.cible; })());
+  if (!nouveaux.length) return;
+  nouveaux.forEach((j) => {
+    S.jalons.push(j.id); const r = j.recompense || {};
+    if (r.or) S.or += r.or;
+    if (r.couleur && !S.cosmetiques.couleurs.includes(r.couleur)) S.cosmetiques.couleurs.push(r.couleur);
+    if (r.pavillon && !S.cosmetiques.pavillons.includes(r.pavillon)) S.cosmetiques.pavillons.push(r.pavillon);
+    if (r.titre && !S.cosmetiques.titres.includes(r.titre)) { S.cosmetiques.titres.push(r.titre); if (!S.titre) S.titre = r.titre; }
+    S.jalonsNonVus = (S.jalonsNonVus || 0) + 1;
+    journal("🏆 Jalon atteint : <b>" + esc(j.nom) + "</b>.");
+    fileJalons.push(j);
+  });
+  sauver(); rendreTout(); montrerJalons();
+}
+async function montrerJalons() {
+  if (!fileJalons.length) return;
+  if (modaleOuverte) { setTimeout(montrerJalons, 700); return; }
+  const j = fileJalons.shift(); vibrer([20, 40, 20]);
+  await modale({ titre: "Jalon atteint !", icone: "🏆", theme: "tresor", html: "<p style='font-size:18px;font-weight:700;margin-bottom:4px'>" + esc(j.nom) + "</p><p class='muted'>" + esc(j.description) + "</p>", chips: texteRecompense(j.recompense || {}).map((t) => "+ " + t), boutons: [{ t: "Magnifique !", primaire: true }].concat((j.recompense || {}).couleur || (j.recompense || {}).pavillon || (j.recompense || {}).titre ? [{ t: "🎨 Personnaliser le navire" }] : []) }).then((r) => { if (r === 1) personnaliser(); });
+  if (fileJalons.length) setTimeout(montrerJalons, 300);
+}
+let minuteurJalons = null;
+function planifierJalons() { if (!minuteurJalons) minuteurJalons = setTimeout(() => { minuteurJalons = null; if (S) verifierJalons(); }, 400); }
+function couleurNavire(n) { const c = C.cosmetiques.couleurs.find((x) => x.id === (S.apparence || {}).couleur); return c && c.couleur ? c.couleur : n.couleurCoque; }
+function pavillonActuel() { return C.cosmetiques.pavillons.find((x) => x.id === (S.apparence || {}).pavillon) || C.cosmetiques.pavillons[0]; }
+function cosmetiqueDispo(type, id) { const liste = C.cosmetiques[type]; const c = liste.find((x) => x.id === id); return c && (c.base || S.cosmetiques[type].includes(id)); }
 
 /* ---------------- Commerce ---------------- */
 function estInterdit(itemId, ileId) { return !!ileId && DB.iles[ileId].interdits.includes(itemId); }
@@ -353,12 +511,15 @@ function prixMarche(ileId, itemId) {
   const i = DB.iles[ileId]; const d = DB.items[itemId];
   let p = d.prix * (i.produit[itemId] || i.demande[itemId] || 1);
   if (estInterdit(itemId, ileId)) p *= C.commerce.prixContrebande;
-  return p * (S.prixMod[ileId][itemId] || 1);
+  return p * (S.prixMod[ileId][itemId] || 1) * multMarche(ileId, itemId);
 }
-function prixAchat(ileId, itemId) { return Math.max(1, arr(prixMarche(ileId, itemId) * C.commerce.margeAchat * (1 - Math.min(0.3, C.commerce.bonusCommerce * competence("commerce"))))); }
+function prixAchat(ileId, itemId) {
+  const vivres = DB.items[itemId].rations ? (valeurFaction("colonies", "vivres", 1) === true ? 1 : valeurFaction("colonies", "vivres", 1)) : 1;
+  return Math.max(1, arr(prixMarche(ileId, itemId) * C.commerce.margeAchat * (1 - Math.min(0.3, C.commerce.bonusCommerce * competence("commerce"))) * effetPalier(ileId, "prix", 1) * vivres));
+}
 function prixVente(ileId, it) {
-  const rep = S.reputation.iles[ileId] || 0;
-  return Math.max(0, arr(prixMarche(ileId, it.id) * C.commerce.margeVente * (it.etat / 100) * (1 + C.commerce.bonusCommerce * competence("commerce")) * (1 + rep * C.commerce.reputationPrix)));
+  const noir = estInterdit(it.id, ileId) ? valeurFaction("confrerie", "marcheNoir", 1) : 1;
+  return Math.max(0, arr(prixMarche(ileId, it.id) * C.commerce.margeVente * (it.etat / 100) * (1 + C.commerce.bonusCommerce * competence("commerce")) / effetPalier(ileId, "prix", 1) * (noir === true ? 1 : noir)));
 }
 function bougerPrix(ileId, itemId, sens) { const m = S.prixMod[ileId]; m[itemId] = clamp((m[itemId] || 1) * (1 + sens * C.commerce.elasticite), 0.4, 2.5); }
 function acheter(itemId) {
@@ -370,7 +531,7 @@ function acheter(itemId) {
 }
 function vendre(it) {
   if (it.contrat) return toast("Cette marchandise appartient à un contrat.");
-  const p = prixVente(S.ile, it); S.or += p; bougerPrix(S.ile, it.id, -1); retirer(it);
+  const p = prixVente(S.ile, it); S.or += p; bougerPrix(S.ile, it.id, -1); retirer(it); stat("ventesOr", p);
   changerRep(S.ile, (p / 100) * C.reputation.venteMarche);
   journal("Vendu " + esc(DB.items[it.id].nom) + " pour " + p + " or."); rendreTout(); sauver();
 }
@@ -378,15 +539,25 @@ function vendre(it) {
 /* ---------------- Contrats et quêtes ---------------- */
 function joursTrajet(a, b) { return dist(a, b) / Math.max(1, vitesseNavire()); }
 function genererOffres(ileId) {
-  const i = DB.iles[ileId]; const ca = C.contratsAleatoires; const offres = [];
-  if (i.marche) {
+  const i = DB.iles[ileId]; const ca = C.contratsAleatoires; const offres = []; const pal = palierIle(ileId).effets;
+  if (i.marche && pal.contrats !== false && marcheOuvert(ileId)) {
     const dests = S.connues.filter((d) => d !== ileId && DB.iles[d].marche);
-    for (let k = 0; k < ca.parPort && dests.length; k++) {
+    const fac = valeurFaction(i.faction, "contratsBonus", 1); const mult = (pal.recompense || 1) * (fac === true ? 1 : fac);
+    const n = ca.parPort + (pal.contratsBonus || 0);
+    for (let k = 0; k < n && dests.length; k++) {
       const dest = choisir(dests); const item = choisir(ca.items); const q = aleaInt(ca.quantiteMin, ca.quantiteMax);
       const j = joursTrajet(i, DB.iles[dest]);
       offres.push({ id: "c" + uid(), type: "livraison", titre: "Livraison pour " + DB.iles[dest].nom, origine: ileId, destination: dest, item, quantite: q,
         delaiJours: Math.ceil(j * ca.margeDelai) + 1, etatMin: ca.etatMin,
-        recompense: arr(DB.items[item].prix * q * ca.recompenseParValeur + j * ca.recompenseParJour), reputation: ca.reputation, aleatoire: true });
+        recompense: arr((DB.items[item].prix * q * ca.recompenseParValeur + j * ca.recompenseParJour) * mult), reputation: ca.reputation, aleatoire: true });
+    }
+    const cr = C.contratsRares;
+    if (dests.length && Math.random() < cr.chance + (pal.rares || 0)) {
+      const dest = choisir(dests); const item = choisir(cr.items); const q = aleaInt(1, 2); const j = joursTrajet(i, DB.iles[dest]);
+      offres.unshift({ id: "r" + uid(), type: "livraison", rare: true, titre: "Commande exceptionnelle pour " + DB.iles[dest].nom, origine: ileId, destination: dest, item, quantite: q,
+        delaiJours: Math.max(2, Math.ceil(j * ca.margeDelai * cr.multDelai) + 1), etatMin: cr.etatMin,
+        recompense: arr((DB.items[item].prix * q * ca.recompenseParValeur + j * ca.recompenseParJour) * cr.multRecompense * mult), reputation: ca.reputation * 2, aleatoire: true,
+        texte: "Un riche client paie très cher… à condition que la marchandise arrive vite et en parfait état." });
     }
   }
   S.offres[ileId] = offres;
@@ -399,7 +570,8 @@ function prerequisOk(q) {
 }
 function offresIci() {
   if (!S.ile) return [];
-  const quetes = C.quetes.filter((q) => q.origine === S.ile && !S.quetesFaites.includes(q.id) && !S.contrats.some((c) => c.id === q.id) && prerequisOk(q));
+  const ouvert = effetPalier(S.ile, "contrats", true) !== false && effetPalier(S.ile, "quetes", true) !== false;
+  const quetes = ouvert ? C.quetes.filter((q) => q.origine === S.ile && !S.quetesFaites.includes(q.id) && !S.contrats.some((c) => c.id === q.id) && prerequisOk(q)) : [];
   return quetes.concat(S.offres[S.ile] || []);
 }
 function accepter(o) {
@@ -426,14 +598,18 @@ async function livrerContrats() {
     let gain = c.recompense * Math.max(0, 1 - retard * C.contrats.retardPenaliteParJour);
     let rep = c.reputation; const lignes = [];
     if (items.length < c.quantite) lignes.push("Marchandise manquante : " + (c.quantite - items.length) + " / " + c.quantite + ".");
+    const parfaite = items.length === c.quantite && etat >= C.livraisonParfaite.seuil;
     if (etat < c.etatMin) { gain *= 0.5 * etat / c.etatMin; rep = -Math.abs(C.contrats.reputationEchec) / 2; lignes.push("État moyen " + arr(etat) + " % (minimum " + c.etatMin + " %) : le client est mécontent."); }
     else lignes.push("État moyen : " + arr(etat) + " %.");
+    if (parfaite) { gain *= 1 + C.livraisonParfaite.bonus; lignes.push("✨ Livraison parfaite : +" + pct(C.livraisonParfaite.bonus)); }
     if (retard) lignes.push("Retard : " + retard + " jour(s).");
+    stat("livraisons"); if (!retard && etat >= c.etatMin) stat("livraisonsATemps"); if (parfaite) stat("livraisonsParfaites");
     gain = arr(gain); S.or += gain; changerRep(S.ile, rep);
+    if (S.bilan) { S.bilan.livraisons++; S.bilan.gainLivraisons += gain; if (parfaite) S.bilan.parfaites++; }
     items.forEach(retirer); S.contrats = S.contrats.filter((x) => x.id !== c.id);
     if (!c.aleatoire) S.quetesFaites.push(c.id);
     journal("Contrat « " + esc(c.titre) + " » livré : +" + gain + " or.");
-    await modale({ titre: "Livraison", icone: "📜", theme: rep >= 0 ? "succes" : "echec", html: "<p><b>" + esc(c.titre) + "</b></p><div class='gros-gain'>+" + gain + " 💰</div>", chips: lignes.concat(["Réputation " + (rep >= 0 ? "+" : "−") + Math.abs(arr(rep))]), boutons: [{ t: "Encaisser", primaire: true }] });
+    await modale({ titre: c.rare ? "Commande exceptionnelle livrée" : "Livraison", icone: parfaite ? "✨" : "📜", theme: rep >= 0 ? (c.rare || parfaite ? "tresor" : "succes") : "echec", html: "<p><b>" + esc(c.titre) + "</b></p><div class='gros-gain'>+" + gain + " 💰</div>", chips: lignes.concat(["Réputation " + (rep >= 0 ? "+" : "−") + Math.abs(arr(rep))]), boutons: [{ t: "Encaisser", primaire: true }] });
   }
 }
 function verifierEcheances() {
@@ -460,7 +636,7 @@ function dangerPoint(p) { return p.ile ? DB.iles[p.ile].danger : C.carte.dangerE
 function partir(dest) {
   const cible = dest.ile ? DB.iles[dest.ile] : dest;
   S.voyage = { de: { x: S.pos.x, y: S.pos.y, ile: S.ile }, vers: { x: cible.x, y: cible.y, ile: dest.ile || null }, fait: 0, attente: 0, dist: dist(S.pos, cible), dernierDevoile: 0 };
-  if (S.ile) S.joursEnMer = 0; // depuis le large, les jours de mer continuent de compter jusqu'au prochain port (salaires)
+  if (S.ile) { S.joursEnMer = 0; nouveauBilan(); } // depuis le large, les jours de mer et le bilan continuent jusqu'au prochain port
   S.quai = []; S.ile = null; selection = null; destination = null; vuePort = "accueil";
   journal("Départ vers <b>" + esc(dest.ile ? DB.iles[dest.ile].nom : "des eaux inconnues") + "</b>.");
   vitesseIdx = 0; enPause = false; sauver(); rendreTout(); afficherPanneau("p-carte");
@@ -563,6 +739,7 @@ function finDeJournee(enMer) {
   }
   // Monde
   C.factions.forEach((f) => { S.mefiance[f.id] = Math.max(0, S.mefiance[f.id] - C.contrebande.mefianceBaisseParJour); });
+  majMarche(); if (enMer) stat("joursMer");
   C.iles.forEach((i) => { const m = S.prixMod[i.id]; Object.keys(m).forEach((k) => { m[k] += (1 - m[k]) * C.commerce.retourParJour; }); });
   verifierEcheances();
   verifierEquipage();
@@ -589,11 +766,27 @@ function contrebandeFaction(fid) { const ids = new Set(C.iles.filter((i) => i.fa
 function cibleDisponible(e) { return !e.cible || (e.cible === "cale" ? cales().length > 0 : sallesNavire().some((s) => s.type === e.cible)); }
 function tirerEvenement() {
   const v = S.voyage; const danger = (dangerPoint(v.de) + dangerPoint(v.vers)) / 2;
-  const possibles = C.evenements.filter((e) => e.chanceParJour > 0 && (!e.nuitSeulement || estNuit()) && (e.condition !== "contrebande" || contrebandeFaction(e.faction).length) && cibleDisponible(e));
-  const total = possibles.reduce((s, e) => s + e.chanceParJour, 0);
-  const chance = Math.min(C.carte.chanceEvenementMax, total * (C.carte.chanceEvenementBase + danger * C.carte.chanceEvenementParDanger));
+  const possibles = C.evenements.filter((e) => e.chanceParJour > 0 && (!e.nuitSeulement || estNuit()) && (e.condition !== "contrebande" || contrebandeFaction(e.faction).length) && cibleDisponible(e) && !(e.faction && effetFaction(e.faction, "lettreDeMarque")));
+  const poids = (e) => {
+    let w = e.chanceParJour;
+    if (e.id === "patrouille" && e.faction) { const p = valeurFaction(e.faction, "patrouilles", 1); w *= (p === true ? 1 : p) * (niveauMefiance(e.faction).patrouilles || 1); }
+    if (e.id === "hostile") { const p = valeurFaction("confrerie", "pirates", 1); w *= p === true ? 1 : p; }
+    return w;
+  };
+  const total = possibles.reduce((s, e) => s + poids(e), 0); const base = possibles.reduce((s, e) => s + e.chanceParJour, 0);
+  const chance = Math.min(C.carte.chanceEvenementMax, total * (C.carte.chanceEvenementBase + danger * C.carte.chanceEvenementParDanger) * (base ? 1 : 0));
   if (Math.random() > chance) return;
-  let r = Math.random() * total; for (const e of possibles) { r -= e.chanceParJour; if (r <= 0) { lancerEvenement(e); return; } }
+  let r = Math.random() * total;
+  for (const e of possibles) {
+    r -= poids(e); if (r > 0) continue;
+    const ami = valeurFaction("confrerie", "pavillonAmi", 0);
+    if (e.id === "hostile" && ami && Math.random() < (ami === true ? 0.5 : ami)) {
+      journal("🏴‍☠️ Un navire pirate reconnaît votre pavillon et vous laisse passer.");
+      modale({ titre: "Pavillon ami", icone: "🏴‍☠️", theme: "tresor", html: "<p>Un navire de la Confrérie s'approche… puis vous salue d'un coup de canon à blanc. Vos amitiés vous protègent.</p>", boutons: [{ t: "Saluer en retour", primaire: true }] });
+      return;
+    }
+    lancerEvenement(e); return;
+  }
 }
 function chanceTest(t) { return t ? clamp(t.base + t.parPoint * competence(t.competence), 0.05, 0.95) : 1; }
 function chanceMarin(t, m) { return t ? clamp(t.base + t.parPoint * apportBrut(m, t.competence) * formeMarin(m), 0.05, 0.95) : 1; }
@@ -636,6 +829,7 @@ async function lancerEvenement(e) {
   }
   const chance = c.test ? (marin ? chanceMarin(c.test, marin) : chanceTest(c.test)) : 1;
   const ok = Math.random() < chance;
+  if (S.bilan && S.voyage) { S.bilan.evts++; if (ok && c.test) S.bilan.reussites++; }
   const eff = ok ? c.succes : (c.echec || c.succes);
   lignes.push(...await appliquerEffets(eff, ctx, marin));
   journal("<b>" + esc(e.titre) + "</b> — " + esc(txt(c.texte)) + (marin ? " (" + esc(marin.nom) + ")" : "") + " : " + (ok ? "réussite" : "échec") + ".");
@@ -684,6 +878,7 @@ async function appliquerEffets(e, ctx, marin) {
   }
   if (e.gagner) {
     const [id, n] = e.gagner;
+    if (id === "coffre") stat("tresors", n);
     for (let k = 0; k < n; k++) { const it = creerItem(id); if (placerAuto(it)) L.push(DB.items[id].nom + " rangé dans la cale"); else if (S.ile) { S.quai.push(it); L.push(DB.items[id].nom + " posé à terre : faites-lui de la place dans la cale"); } else L.push("Pas de place pour " + DB.items[id].nom + " : perdu"); }
   }
   if (e.blesse && S.equipage.length) { const m = choisir(S.equipage); m.sante -= e.blesse; ctx.blesses.push(m); L.push(m.nom + " : blessure, santé −" + e.blesse); }
@@ -724,21 +919,26 @@ async function inspection(fid, ileId, certaine) {
   if (!suspects.length) { if (certaine) await modale({ titre: "Inspection", icone: "🔍", theme: "autorite", html: "<p>Les inspecteurs fouillent la cale et ne trouvent rien.</p>", boutons: [{ t: "Continuer", primaire: true }] }); return; }
   if (!certaine) {
     const i = DB.iles[ileId];
-    let ch = i.surveillance * (1 + S.mefiance[fid] * C.contrebande.mefianceInspection) * (1 - Math.min(0.6, C.contrebande.bonusCommerce * competence("commerce")));
-    if (estNuit()) ch *= C.contrebande.nuitInspection;
-    if (Math.random() > ch) return;
+    const nm = niveauMefiance(fid); const ip = effetPalier(ileId, "inspection", 1);
+    let ch = 1;
+    if (nm.inspection !== "systematique" && ip !== "systematique") {
+      ch = i.surveillance * nm.inspection * ip * (1 - Math.min(0.6, C.contrebande.bonusCommerce * competence("commerce")));
+      if (estNuit()) ch *= C.contrebande.nuitInspection;
+    }
+    if (Math.random() > ch) { stat("inspectionsEchappees"); return; }
   }
   const f = DB.factions[fid];
   const r = await modale({ titre: "Inspection !", icone: "🔍", theme: "autorite", html: "<p>Des agents de <b>" + esc(f.nom) + "</b> montent à bord pour fouiller la cale.</p><p class='muted'>Contrebande à bord : " + suspects.map((it) => esc(DB.items[it.id].nom) + (dansCachette(it) ? " (cachette)" : "")).join(", ") + "</p>",
     boutons: [{ t: "Laisser fouiller", primaire: true }, { t: "Glisser un pot-de-vin (" + C.contrebande.potDeVin + " or)", sous: "Chance : " + pct(clamp(f.corruptible + 0.1 * competence("commerce"), 0, 0.95)), off: S.or < C.contrebande.potDeVin }] });
   if (r === 1) {
     S.or -= C.contrebande.potDeVin;
-    if (Math.random() < clamp(f.corruptible + 0.1 * competence("commerce"), 0, 0.95)) { journal("Pot-de-vin accepté par " + esc(f.nom) + "."); await modale({ titre: "Marché conclu", icone: "🤝", theme: "succes", html: "<p>L'inspecteur empoche l'or et regarde ailleurs.</p>", boutons: [{ t: "Continuer", primaire: true }] }); return; }
+    if (Math.random() < clamp(f.corruptible + 0.1 * competence("commerce"), 0, 0.95)) { stat("inspectionsEchappees"); journal("Pot-de-vin accepté par " + esc(f.nom) + "."); await modale({ titre: "Marché conclu", icone: "🤝", theme: "succes", html: "<p>L'inspecteur empoche l'or et regarde ailleurs.</p>", boutons: [{ t: "Continuer", primaire: true }] }); return; }
     S.mefiance[fid] += 10;
   }
   const bonusTrait = S.equipage.reduce((s, m) => s + m.traits.reduce((a, t) => a + (DB.traits[t].cachette || 0), 0), 0);
-  const trouves = suspects.filter((it) => Math.random() > clamp(discretionItem(it) + bonusTrait, 0, 0.98));
-  if (!trouves.length) { await modale({ titre: "Ouf !", icone: "😮‍💨", theme: "succes", html: "<p>Les inspecteurs repartent bredouilles.</p>", boutons: [{ t: "Continuer", primaire: true }] }); return; }
+  const fouille = niveauMefiance(fid).cachette || 1;
+  const trouves = suspects.filter((it) => Math.random() > clamp(discretionItem(it) * fouille + bonusTrait, 0, 0.98));
+  if (!trouves.length) { stat("inspectionsEchappees"); await modale({ titre: "Ouf !", icone: "😮‍💨", theme: "succes", html: "<p>Les inspecteurs repartent bredouilles.</p>", boutons: [{ t: "Continuer", primaire: true }] }); return; }
   const valeur = trouves.reduce((s, it) => s + DB.items[it.id].prix, 0);
   const amende = Math.min(S.or, arr(valeur * C.contrebande.amendeParValeur * f.severite));
   S.or -= amende; trouves.forEach(retirer); S.mefiance[fid] += C.contrebande.mefianceGain;
@@ -751,7 +951,7 @@ async function inspection(fid, ileId, certaine) {
 async function arriver() {
   const v = S.voyage; enPause = true; S.pos = { x: v.vers.x, y: v.vers.y }; S.voyage = null;
   if (!v.vers.ile) {
-    S.ile = null; devoilerAutour(S.pos.x, S.pos.y, C.carte.rayonBrouillard + 4); decouvrirAutour(S.pos);
+    S.ile = null; devoilerAutour(S.pos.x, S.pos.y, C.carte.rayonBrouillard + 4); decouvrirAutour(S.pos); stat("mouillages");
     journal("Vous jetez l'ancre au large, en eaux inconnues.");
     rendreTout(); sauver();
     await modale({ titre: "Au large", icone: "🧭", theme: "mer", html: "<p>Vous voici en eaux inconnues. Observez la carte et choisissez un nouveau cap.</p>", boutons: [{ t: "Voir la carte", primaire: true }] });
@@ -762,14 +962,18 @@ async function arriver() {
   // Salaires
   const du = S.equipage.reduce((s, m) => s + m.salaire, 0) * S.joursEnMer;
   if (du > 0) { if (S.or >= du) { S.or -= du; journal("Salaires payés : " + du + " or."); } else { S.equipage.forEach((m) => { m.moral += C.equipage.salaireImpayeMoral; }); journal("<b>Salaires impayés !</b> L'équipage gronde."); S.or = 0; } }
+  const taxe = effetPalier(i.id, "taxeEntree", 0);
+  if (taxe) { const t = Math.min(S.or, taxe); S.or -= t; if (S.bilan) S.bilan.taxes += t; journal("🏛️ Port hostile : taxe d'entrée de " + t + " or."); }
+  S.rumeurs.forEach((r) => { if (r.ile === i.id && !r.statut && S.temps >= r.debut && S.temps <= r.fin) r.statut = r.vraie ? "confirmee" : "fausse"; });
   rendreTout(); afficherPanneau("p-port");
   if (i.surveillance > 0) await inspection(i.faction, i.id, false);
   await livrerContrats();
   if (i.evenementArrivee && !S.evtArriveeFaits.includes(i.id)) { S.evtArriveeFaits.push(i.id); await lancerEvenement(DB.evts[i.evenementArrivee]); }
   // Désertion
   for (const m of [...S.equipage]) if (S.equipage.length > 1 && m.moral < C.equipage.desertionSousMoral && Math.random() < C.equipage.chanceDesertion) { S.equipage = S.equipage.filter((x) => x !== m); journal("<b>" + esc(m.nom) + " a déserté.</b>"); toast(m.nom + " a déserté !"); }
+  await montrerBilan(i);
   genererOffres(i.id);
-  verifierEquipage(); sauver(); rendreTout();
+  verifierEquipage(); sauver(); rendreTout(); verifierJalons();
 }
 
 /* ---------------- Naufrage ---------------- */
@@ -787,7 +991,7 @@ async function naufrage() {
   S.contrats = []; S.voyage = null; S.ile = refuge; S.pos = { x: DB.iles[refuge].x, y: DB.iles[refuge].y };
   Object.keys(S.reputation.iles).forEach((k) => { S.reputation.iles[k] *= nf.reputationConservee; });
   Object.keys(S.reputation.factions).forEach((k) => { S.reputation.factions[k] *= nf.reputationConservee; });
-  S.generation++; S.cohesion = 50;
+  S.generation++; S.cohesion = 50; stat("naufrages"); S.bilan = null;
   for (let k = 0; k < nf.rations[1]; k++) { const it = creerItem(nf.rations[0]); placerAuto(it); }
   genererOffres(refuge);
   journal("<b>Naufrage !</b> " + esc(survivant.nom) + " est le seul survivant et reprend la mer sur une barque. Génération " + S.generation + ".");
@@ -796,8 +1000,9 @@ async function naufrage() {
 }
 
 /* ---------------- Services du port ---------------- */
-function coutReparation() { return arr((coqueMax() - S.navire.coque) * C.commerce.reparationParPoint); }
-function reparer() { const c = coutReparation(); const pay = Math.min(S.or, c); const pts = pay / C.commerce.reparationParPoint; S.or -= pay; S.navire.coque = Math.min(coqueMax(), S.navire.coque + pts); journal("Réparations : " + pay + " or."); rendreTout(); sauver(); }
+function prixPointCoque() { return C.commerce.reparationParPoint * effetPalier(S.ile, "reparation", 1); }
+function coutReparation() { return arr((coqueMax() - S.navire.coque) * prixPointCoque()); }
+function reparer() { const c = coutReparation(); const pay = Math.min(S.or, c); const pts = pay / prixPointCoque(); S.or -= pay; S.navire.coque = Math.min(coqueMax(), S.navire.coque + pts); journal("Réparations : " + pay + " or."); rendreTout(); sauver(); }
 function repos() {
   const eq = C.equipage; if (S.or < eq.reposPrix) return toast("Pas assez d'or.");
   S.or -= eq.reposPrix; S.temps += 1;
@@ -805,11 +1010,15 @@ function repos() {
   finDeJournee(false); genererOffres(S.ile);
   journal("Une journée de repos à terre."); rendreTout(); sauver();
 }
-function recruesDispo() { return C.marins.filter((m) => m.prixRecrutement && !S.marinsPasses.includes(m.id)).slice(0, 2); }
+function recruesDispo() {
+  const i = ileAct(); if (i && effetFaction(i.faction, "pasDeRecrues")) return [];
+  return C.marins.filter((m) => m.prixRecrutement && !S.marinsPasses.includes(m.id)).slice(0, 2 + effetPalier(S.ile, "recrues", 0));
+}
+function prixRecrue(m) { const i = ileAct(); const f = i ? valeurFaction(i.faction, "recrutement", 1) : 1; return arr(m.prixRecrutement * (f === true ? 1 : f)); }
 function recruter(id) {
-  const m = DB.marins[id]; if (S.or < m.prixRecrutement) return toast("Pas assez d'or.");
+  const m = DB.marins[id]; if (S.or < prixRecrue(m)) return toast("Pas assez d'or.");
   if (S.equipage.length >= navire().equipageMax) return toast("Plus de place à bord.");
-  S.or -= m.prixRecrutement; const recrue = creerMarin(id); S.equipage.push(recrue); placerMarin(recrue); S.marinsPasses.push(id); S.cohesion = clamp(S.cohesion + C.equipage.cohesionRecrue, 0, 100);
+  S.or -= prixRecrue(m); const recrue = creerMarin(id); S.equipage.push(recrue); placerMarin(recrue); S.marinsPasses.push(id); S.cohesion = clamp(S.cohesion + C.equipage.cohesionRecrue, 0, 100);
   journal(esc(m.nom) + " rejoint l'équipage."); rendreTout(); sauver();
 }
 function acheterAmelio(id) {
@@ -818,13 +1027,15 @@ function acheterAmelio(id) {
   S.or -= a.prix; S.navire.amelios.push(id); if (a.bonusCoque) S.navire.coque += a.bonusCoque;
   journal("Amélioration installée : " + esc(a.nom) + "."); rendreTout(); sauver();
 }
+function navireAutorise(n) { return !n.requiert || (S.reputation.factions[n.requiert.faction] || 0) >= n.requiert.reputation; }
 function reprise() { return arr(navire().prix * 0.5); }
 async function acheterNavire(id) {
   const n = DB.navires[id]; const cout = n.prix - reprise(); if (S.or < cout) return toast("Pas assez d'or.");
+  if (!navireAutorise(n)) return toast("La " + DB.factions[n.requiert.faction].nom + " doit vous estimer davantage.");
   const r = await modale({ titre: "Changer de navire", icone: "⛵", html: "<p>Acheter une <b>" + esc(n.nom) + "</b> pour " + cout + " or (reprise de votre " + esc(navire().nom) + " déduite) ?</p><p class='muted'>Les améliorations sont perdues. La cargaison est déposée sur le quai : rangez-la dans les nouvelles cales. L'équipage est réparti dans les salles du nouveau navire.</p>", boutons: [{ t: "Acheter", primaire: true }, { t: "Annuler" }] });
   if (r !== 0) return;
   S.or -= cout; S.cale.forEach((it) => { it.x = -1; it.y = -1; it.cale = null; S.quai.push(it); }); S.cale = [];
-  S.navire = { type: id, coque: n.coqueMax, amelios: [], nom: n.nomParDefaut };
+  S.navire = { type: id, coque: n.coqueMax, amelios: [], nom: n.nomParDefaut }; stat("navire_" + id);
   placementConseille(); salleSel = calePrincipale();
   journal("Nouveau navire : <b>" + esc(n.nom) + "</b> !"); rendreTout(); sauver(); afficherPanneau("p-cale");
 }
@@ -844,12 +1055,17 @@ let dernierTap = { uid: null, t: 0 };
 const estPC = () => window.matchMedia("(min-width: 980px)").matches;
 
 function afficherPanneau(id) {
-  if (estPC()) { if (id === "p-equipage") document.body.classList.toggle("voirEquipage"); return; }
+  if (estPC()) {
+    if (id === "p-equipage") { document.body.classList.remove("voirQuetes"); document.body.classList.toggle("voirEquipage"); }
+    if (id === "p-quetes") { document.body.classList.remove("voirEquipage"); document.body.classList.toggle("voirQuetes"); rendreQuetes(); rendreOnglets(); }
+    return;
+  }
+  if (id === "p-quetes") { rendreQuetes(); }
   document.querySelectorAll(".panneau").forEach((p) => p.classList.toggle("actif", p.id === id));
   document.querySelectorAll("#onglets button").forEach((b) => b.classList.toggle("actif", b.dataset.p === id));
   if (id === "p-cale") rendreCale();
 }
-function rendreTout() { rendreHaut(); rendrePort(); rendreCale(); rendreCarte(); rendreEquipage(); rendreOnglets(); }
+function rendreTout() { rendreHaut(); rendrePort(); rendreCale(); rendreCarte(); rendreEquipage(); rendreQuetes(); rendreOnglets(); planifierJalons(); }
 function rafraichir(enMer) {
   if (enMer && S.voyage) { rendreHaut(); majVoyage(); rendreCale(); rendreEquipage(); majCarteVoyage(); }
   else rendreTout();
@@ -878,9 +1094,10 @@ function rendreHaut() {
       "<span class='stat' id='st-coque' title='Coque'><i>🛠️</i><b></b></span>" +
       "<span class='stat' id='st-charge' title='Charge de la cale'><i>⚖️</i><b></b></span>" +
       "<span class='stat' id='st-moral' title='Moral moyen'><i>🙂</i><b></b></span>" +
-      "<span id='hautDroite'><span id='hautTemps'></span><button class='btnHaut' id='btnEquipagePC' title='Équipage'>👥</button><button class='btnHaut' id='menuBtn' title='Menu'>☰</button></span>";
+      "<span id='hautDroite'><span id='hautTemps'></span><button class='btnHaut' id='btnQuetesPC' title='Quêtes'>📜</button><button class='btnHaut' id='btnEquipagePC' title='Équipage'>👥</button><button class='btnHaut' id='menuBtn' title='Menu'>☰</button></span>";
     $("#menuBtn").onclick = menu;
-    $("#btnEquipagePC").onclick = () => document.body.classList.toggle("voirEquipage");
+    $("#btnEquipagePC").onclick = () => afficherPanneau("p-equipage");
+    $("#btnQuetesPC").onclick = () => afficherPanneau("p-quetes");
   }
   const jv = joursDeVivres(); const rc = ratioCharge(); const cq = S.navire.coque / coqueMax(); const mo = moralMoyen();
   const v = { or: arr(S.or), coque: arr(S.navire.coque), moral: arr(mo) };
@@ -908,6 +1125,9 @@ function rendreHaut() {
 }
 function regler(v) { if (v === "p") enPause = !enPause; else { vitesseIdx = +v; enPause = false; } rendreHaut(); majVoyage(); }
 function rendreOnglets() {
+  const bq = document.querySelector("#onglets button[data-p='p-quetes']");
+  if (bq) { const n = S.jalonsNonVus || 0; let pq = bq.querySelector(".pastille"); if (n && !pq) { pq = document.createElement("i"); pq.className = "pastille"; bq.appendChild(pq); } if (pq) { if (n) pq.textContent = n; else pq.remove(); } }
+  const btnPC = $("#btnQuetesPC"); if (btnPC) btnPC.classList.toggle("nouveau", !!S.jalonsNonVus);
   const b = document.querySelector("#onglets button[data-p='p-cale']"); if (!b) return;
   const n = S.quai.length; let p = b.querySelector(".pastille");
   if (n && !p) { p = document.createElement("i"); p.className = "pastille"; b.appendChild(p); }
@@ -957,19 +1177,22 @@ function rendrePort() {
 function journalHtml() { return "<details class='journal'><summary>Journal de bord</summary><div class='liste bloc'>" + S.journal.map((e) => "<div><span class='muted'>J" + e.j + "</span> " + e.t + "</div>").join("") + "</div></details>"; }
 function lieuxDe(i) {
   const L = []; const livr = offresIci().filter((o) => o.type === "livraison").length; const rum = offresIci().filter((o) => o.type === "decouverte").length;
-  if (i.marche) L.push({ id: "capitainerie", ic: "📜", t: "Capitainerie", s: livr ? livr + " contrat(s) proposé(s)" : "Aucun contrat", badge: livr });
-  if (i.marche) L.push({ id: "marche", ic: "⚖️", t: "Marché", s: "Acheter et vendre" });
+  const rares = (S.offres[i.id] || []).filter((o) => o.rare).length; const ferme = effetPalier(i.id, "contrats", true) === false;
+  if (i.marche) L.push({ id: "capitainerie", ic: "📜", t: "Capitainerie", s: ferme ? "Fermée : vous êtes indésirable" : rares ? "✨ Commande exceptionnelle !" : livr ? livr + " contrat(s) proposé(s)" : "Aucun contrat", badge: rares ? "✨" : livr, badgeOr: !!rares });
+  if (i.marche) L.push({ id: "marche", ic: "⚖️", t: "Marché", s: marcheOuvert(i.id) ? (S.marche.some((e) => e.ile === i.id && e.debut <= S.temps && S.temps <= e.fin) ? "📈 Les prix bougent !" : "Acheter et vendre") : "Boycott : marché fermé" });
   if (i.services.includes("reparation") || i.services.includes("chantier") || i.ameliorations.length) L.push({ id: "chantier", ic: "🔨", t: i.services.includes("chantier") ? "Chantier naval" : "Atelier", s: "Coque " + arr(S.navire.coque) + "/" + coqueMax(), badge: S.navire.coque < coqueMax() * 0.6 ? "!" : 0 });
   const tav = i.services.includes("taverne");
-  L.push({ id: "taverne", ic: tav ? "🍺" : "🔥", t: tav ? "Taverne" : "Bivouac", s: rum ? rum + " rumeur(s)" : tav ? "Repos, recrues" : "Se reposer", badge: rum, badgeOr: true });
-  if (i.services.includes("coffre")) L.push({ id: "banque", ic: "🔒", t: "Coffre", s: S.coffre + " or à l'abri" });
+  L.push({ id: "taverne", ic: tav ? "🍺" : "🔥", t: tav ? "Taverne" : "Bivouac", s: rum ? rum + " quête(s) à écouter" : tav ? "Rumeurs, repos, recrues" : "Se reposer", badge: rum, badgeOr: true });
+  if (i.services.includes("coffre") || (i.marche && effetQuelconque("coffrePartout"))) L.push({ id: "banque", ic: "🔒", t: "Coffre", s: S.coffre + " or à l'abri" });
   return L;
 }
 function titreLieu(id, i) { const l = lieuxDe(i).find((x) => x.id === id); return l ? l.ic + " " + l.t : id; }
 function vueAccueil(i) {
   const f = DB.factions[i.faction]; const rep = S.reputation.iles[i.id] || 0;
   let h = "<div class='banniere'>" + banniereIle(i) + "<div class='nomIle'>" + esc(i.nom) + "</div></div>";
-  h += "<div class='tags'><span class='tag' style='background:" + f.couleur + ";color:#fff'>" + esc(f.nom) + "</span><span class='tag'>" + (i.climat === "tropical" ? "🌴 Tropical" : "🌿 Tempéré") + "</span><span class='tag'>👁️ Surveillance " + niveau(i.surveillance) + "</span><span class='tag " + (rep < 0 ? "rouge" : "vert") + "'>⭐ " + repTexte(rep) + "</span>" + (i.interdits.length ? "<span class='tag rouge'>⚠️ Interdit : " + i.interdits.map((x) => DB.items[x].icone).join(" ") + "</span>" : "") + "</div>";
+  h += "<div class='tags'><span class='tag' style='background:" + f.couleur + ";color:#fff'>" + esc(f.nom) + "</span><span class='tag'>" + (i.climat === "tropical" ? "🌴 Tropical" : "🌿 Tempéré") + "</span><span class='tag'>👁️ Surveillance " + niveau(i.surveillance) + "</span>" + tagPalier(rep) + "<span class='tag' style='background:" + niveauMefiance(i.faction).couleur + ";color:#fff'>👁️‍🗨️ " + esc(niveauMefiance(i.faction).nom) + "</span>" + (i.interdits.length ? "<span class='tag rouge'>⚠️ Interdit : " + i.interdits.map((x) => DB.items[x].icone).join(" ") + "</span>" : "") + "</div>";
+  if (palierIle(i.id).id === "hostile") h += "<div class='bloc' style='border-color:#b23a2e;background:#f8dcd6'>⛔ <b>Vous êtes indésirable ici.</b> " + esc(palierIle(i.id).resume) + ".</div>";
+  h += objectifsHtml(i);
   if (S.quai.length) h += "<div class='bloc' style='border-color:#c47a1a;background:#fff1d6;display:flex;align-items:center;gap:10px'><span style='font-size:26px'>📦</span><div style='flex:1'><b>" + S.quai.length + " item(s) sur le quai</b><div class='muted'>À ranger dans la cale avant de partir.</div></div><button class='primaire' data-a='cale'>Ranger</button></div>";
   h += "<div class='lieux'>" + lieuxDe(i).map((l) => "<button class='lieu' data-lieu='" + l.id + "'>" + (l.badge ? "<span class='badge" + (l.badgeOr ? " or" : "") + "'>" + l.badge + "</span>" : "") + "<span class='ic'>" + l.ic + "</span><span class='t'>" + l.t + "</span><span class='s'>" + l.s + "</span></button>").join("") + "</div>";
   h += "<button class='primaire' data-a='carte' style='width:100%;min-height:50px;font-size:16px'>⛵ Lever l'ancre…</button>";
@@ -983,7 +1206,7 @@ function contratEnCours(c) {
 function carteOffre(o) {
   if (o.type === "decouverte") return "<button class='contrat' data-offre='" + o.id + "'><span class='ai'>🗺️</span><div style='flex:1;min-width:0'><div class='nom'>" + esc(o.titre) + "</div><div class='sous'>" + esc(o.texte) + "</div></div></button>";
   const d = DB.items[o.item]; const dest = DB.iles[o.destination]; const noir = estInterdit(o.item, o.destination);
-  return "<button class='contrat' data-offre='" + o.id + "'><span class='ai'>" + d.icone + "</span><div style='flex:1;min-width:0'><div class='nom'>" + esc(o.titre) + (o.aleatoire ? "" : " <span class='tag or'>quête</span>") + "</div><div class='route'>" + esc(S.ile ? DB.iles[S.ile].nom : "") + " → " + esc(dest.nom) + "</div><div class='sous'>" + o.quantite + " × " + esc(d.nom) + " · ⏳ " + o.delaiJours + " j · état ≥ " + o.etatMin + " % " + (d.fragile ? "🔸" : "") + (d.craintEau ? "💧" : "") + (d.perissable ? "⏳" : "") + (noir ? " <span class='tag rouge'>⚠️ contrebande</span>" : "") + "</div></div><span class='gain'>" + o.recompense + " 💰</span></button>";
+  return "<button class='contrat" + (o.rare ? " rare" : "") + "' data-offre='" + o.id + "'><span class='ai'>" + d.icone + "</span><div style='flex:1;min-width:0'><div class='nom'>" + (o.rare ? "✨ " : "") + esc(o.titre) + (o.aleatoire ? "" : " <span class='tag or'>quête</span>") + "</div><div class='route'>" + esc(S.ile ? DB.iles[S.ile].nom : "") + " → " + esc(dest.nom) + "</div><div class='sous'>" + o.quantite + " × " + esc(d.nom) + " · ⏳ " + o.delaiJours + " j · état ≥ " + o.etatMin + " % " + (d.fragile ? "🔸" : "") + (d.craintEau ? "💧" : "") + (d.perissable ? "⏳" : "") + (noir ? " <span class='tag rouge'>⚠️ contrebande</span>" : "") + "</div></div><span class='gain'>" + o.recompense + " 💰</span></button>";
 }
 function vueCapitainerie(i) {
   const livr = offresIci().filter((o) => o.type === "livraison");
@@ -993,9 +1216,11 @@ function vueCapitainerie(i) {
   return h;
 }
 function articleHtml(d, droite, sous, couleurFond) {
-  return "<div class='article'><div class='ai' style='background:" + (couleurFond || d.couleur) + "'>" + d.icone + "</div><div class='ac'><div class='nom'>" + esc(d.nom) + "</div><div class='sous'>" + sous + "</div></div>" + droite + "</div>";
+  return "<div class='article'><div class='ai' style='background:" + (couleurFond || d.couleur) + "'>" + d.icone + "</div><div class='ac'><div class='nom'>" + esc(d.nom) + (d.id && S.ile ? etiquetteMarche(S.ile, d.id) : "") + "</div><div class='sous'>" + sous + "</div></div>" + droite + "</div>";
 }
+function etiquetteMarche(ileId, itemId) { const e = evenementMarche(ileId, itemId); return e ? (e.type === "penurie" ? " <span class='tag rouge'>📈 pénurie</span>" : " <span class='tag vert'>📉 abondance</span>") : ""; }
 function vueMarche(i) {
+  if (!marcheOuvert(i.id)) return "<div class='bloc' style='border-color:#b23a2e;background:#f8dcd6'>⛔ <b>Boycott.</b> " + esc(DB.factions[i.faction].nom) + " refuse de commercer avec vous. Améliorez votre réputation auprès de cette faction.</div>";
   let h = "<div class='segment'><button data-seg='acheter' class='" + (ongletMarche === "acheter" ? "actif" : "") + "'>Acheter</button><button data-seg='vendre' class='" + (ongletMarche === "vendre" ? "actif" : "") + "'>Vendre</button></div>";
   if (ongletMarche === "acheter") {
     const achats = C.items.filter((d) => d.achetable !== false && !estInterdit(d.id, i.id));
@@ -1025,18 +1250,24 @@ function vueChantier(i) {
   let h = "";
   if (i.services.includes("reparation")) h += "<div class='bloc'><div class='ligne'><div class='g'><div class='nom'>🛠️ Coque " + arr(S.navire.coque) + " / " + coqueMax() + "</div>" + jauge(S.navire.coque, coqueMax()) + "</div><button class='or' data-a='reparer' " + (S.navire.coque >= coqueMax() || !S.or ? "disabled" : "") + ">Réparer · " + coutReparation() + " 💰</button></div></div>";
   if (i.ameliorations.length) { h += "<h3>⚙️ Améliorations <span class='muted' style='font-family:Inter'>" + S.navire.amelios.length + "/" + navire().emplacements + "</span></h3>"; i.ameliorations.forEach((id) => { const a = DB.amelios[id]; const eu = S.navire.amelios.includes(id); h += articleHtml({ icone: a.effet === "cachette" ? "🗝️" : a.effet === "baches" ? "🧥" : "🪵", nom: a.nom }, eu ? "<span class='tag vert'>installée</span>" : "<button class='prix or' data-amelio='" + id + "' " + (S.or < a.prix ? "disabled" : "") + ">" + a.prix + "<small>💰 installer</small></button>", esc(a.description), "#e9d6a6"); }); }
-  if (i.services.includes("chantier")) { h += "<h3>⛵ Navires</h3>"; C.navires.filter((n) => n.prix > 0 && n.id !== S.navire.type).forEach((n) => { h += articleHtml({ icone: "⛵", nom: n.nom }, "<button class='prix or' data-navire='" + n.id + "'>" + Math.max(0, n.prix - reprise()) + "<small>💰 reprise déduite</small></button>", descNavire(n) + "<br>charge " + n.chargeMax + " · équipage " + n.equipageMax + " · " + n.canons + " canons · vitesse " + n.vitesse, "#cfe0ee"); }); }
+  if (i.services.includes("chantier")) { h += "<h3>⛵ Navires</h3>"; C.navires.filter((n) => n.prix > 0 && n.id !== S.navire.type).forEach((n) => { const ok = navireAutorise(n); h += articleHtml({ icone: "⛵", nom: n.nom }, ok ? "<button class='prix or' data-navire='" + n.id + "'>" + Math.max(0, n.prix - reprise()) + "<small>💰 reprise déduite</small></button>" : "<button class='prix' disabled>🔒<small>" + esc(DB.factions[n.requiert.faction].nom) + " ≥ " + n.requiert.reputation + "</small></button>", descNavire(n) + "<br>charge " + n.chargeMax + " · équipage " + n.equipageMax + " · " + n.canons + " canons · vitesse " + n.vitesse, "#cfe0ee"); }); }
   return h || "<div class='bloc muted'>Aucun service ici.</div>";
 }
 function vueTaverne(i) {
   const tav = i.services.includes("taverne"); let h = "";
+  if (tav) {
+    const deja = S.rumeurEscale === S.ile + ":" + Math.floor(S.temps);
+    h += articleHtml({ icone: "🍺", nom: "Payer un verre et écouter" }, "<button class='prix or' data-a='rumeur' " + (deja || S.or < C.rumeurs.prix ? "disabled" : "") + ">" + C.rumeurs.prix + "<small>" + (deja ? "déjà écouté" : "💰 un verre") + "</small></button>", "Les marins parlent des pénuries et des abondances à venir… pas toujours à raison.", "#e9d6a6");
+    const recentes = S.rumeurs.slice(0, 3);
+    if (recentes.length) h += "<div class='bloc'>" + recentes.map((r) => { const [s, t] = statutRumeur(r); return "<div class='ligne'><div class='g'><div class='nom' style='font-size:13px'>" + esc(texteRumeur(r)) + "</div><span class='effet " + s + "' style='font-size:11.5px'>" + esc(t) + "</span></div></div>"; }).join("") + "</div>";
+  }
   h += articleHtml({ icone: "🛏️", nom: "Repos à terre (1 jour)" }, "<button class='prix or' data-a='repos' " + (S.or < C.equipage.reposPrix ? "disabled" : "") + ">" + C.equipage.reposPrix + "<small>💰 1 jour</small></button>", "Santé +" + C.equipage.reposSante + " · moral +" + C.equipage.reposMoral + " · de nouveaux contrats arrivent", "#e9d6a6");
   const rum = offresIci().filter((o) => o.type === "decouverte");
   if (rum.length) h += "<h3>👂 Rumeurs</h3>" + rum.map(carteOffre).join("");
   if (i.services.includes("recrutement")) {
     const rec = recruesDispo(); const plein = S.equipage.length >= navire().equipageMax;
     h += "<h3>🍺 Recrues <span class='muted' style='font-family:Inter'>" + S.equipage.length + "/" + navire().equipageMax + " à bord</span></h3>";
-    h += rec.length ? rec.map((m) => "<div class='article'>" + portraitSvg(m.portrait, 48) + "<div class='ac'><div class='nom'>" + esc(m.nom) + "</div><div class='sous'>" + esc(DB.roles[m.role].nom) + " · second : " + esc(DB.roles[m.secondaire].nom) + "<br>" + m.salaire + " or/jour" + (m.traits.length ? " · " + m.traits.map((t) => DB.traits[t].nom).join(", ") : "") + "</div></div><button class='prix or' data-recrue='" + m.id + "' " + (plein || S.or < m.prixRecrutement ? "disabled" : "") + ">" + m.prixRecrutement + "<small>" + (plein ? "plus de place" : "💰 recruter") + "</small></button></div>").join("") : "<div class='bloc muted'>Personne ne cherche d'embarquement.</div>";
+    h += rec.length ? rec.map((m) => "<div class='article'>" + portraitSvg(m.portrait, 48) + "<div class='ac'><div class='nom'>" + esc(m.nom) + "</div><div class='sous'>" + esc(DB.roles[m.role].nom) + " · second : " + esc(DB.roles[m.secondaire].nom) + "<br>" + m.salaire + " or/jour" + (m.traits.length ? " · " + m.traits.map((t) => DB.traits[t].nom).join(", ") : "") + "</div></div><button class='prix or' data-recrue='" + m.id + "' " + (plein || S.or < prixRecrue(m) ? "disabled" : "") + ">" + prixRecrue(m) + "<small>" + (plein ? "plus de place" : "💰 recruter") + "</small></button></div>").join("") : "<div class='bloc muted'>" + (effetFaction(i.faction, "pasDeRecrues") ? "Votre mauvaise réputation auprès des " + esc(DB.factions[i.faction].nom) + " fait fuir les candidats." : "Personne ne cherche d'embarquement.") + "</div>";
   } else if (tav) h += "<p class='muted'>Personne ici ne cherche à s'engager.</p>";
   return h;
 }
@@ -1045,7 +1276,7 @@ function vueBanque() {
     "<div class='grille2'><button data-coffre='50'>Déposer 50</button><button data-coffre='-50'>Retirer 50</button><button data-coffre='tout'>Tout déposer</button><button data-coffre='-tout'>Tout retirer</button></div></div>";
 }
 function lierPort(p) {
-  p.querySelectorAll("[data-a]").forEach((b) => b.onclick = () => { const a = b.dataset.a; if (a === "carte") { if (estPC()) { const m = $("#p-carte"); m.scrollTop = 0; m.classList.remove("secoue"); } afficherPanneau("p-carte"); } if (a === "cale") afficherPanneau("p-cale"); if (a === "accueil") { vuePort = "accueil"; rendrePort(); } if (a === "reparer") reparer(); if (a === "repos") repos(); });
+  p.querySelectorAll("[data-a]").forEach((b) => b.onclick = () => { const a = b.dataset.a; if (a === "rumeur") return ecouterRumeur(); if (a === "quetes") return afficherPanneau("p-quetes"); if (a === "carte") { if (estPC()) { const m = $("#p-carte"); m.scrollTop = 0; m.classList.remove("secoue"); } afficherPanneau("p-carte"); } if (a === "cale") afficherPanneau("p-cale"); if (a === "accueil") { vuePort = "accueil"; rendrePort(); } if (a === "reparer") reparer(); if (a === "repos") repos(); });
   p.querySelectorAll("[data-lieu]").forEach((b) => b.onclick = () => { vuePort = b.dataset.lieu; p.scrollTop = 0; rendrePort(); });
   p.querySelectorAll("[data-seg]").forEach((b) => b.onclick = () => { ongletMarche = b.dataset.seg; rendrePort(); });
   p.querySelectorAll("[data-achat]").forEach((b) => b.onclick = () => acheter(b.dataset.achat));
@@ -1124,7 +1355,7 @@ function hautCoupe(n) { // sans vigie, on coupe le haut du ciel pour gagner de l
   return yMin < 60 ? 0 : Math.max(0, yMin - 14);
 }
 function silhouetteSvg(n) {
-  const cp = n.coupe; const H = cp.hauteur; const coul = n.couleurCoque; const y0 = hautCoupe(n);
+  const cp = n.coupe; const H = cp.hauteur; const coul = couleurNavire(n); const y0 = hautCoupe(n); const pav = pavillonActuel();
   const eau = clamp(cp.quille - 26 - ratioCharge() * 16, cp.pont + 30, cp.quille - 8);
   const formes = {
     barque: { coque: "M 60 100 L 300 100 Q 318 98 326 86 Q 318 150 278 190 Q 226 210 184 210 Q 134 208 104 192 Q 66 156 60 100 Z",
@@ -1139,7 +1370,7 @@ function silhouetteSvg(n) {
   };
   const f = formes[n.silhouette] || formes.cotre; const idc = "coque-" + n.id;
   let s = "<svg class='coupe-svg' viewBox='0 " + y0 + " 366 " + (H - y0) + "' preserveAspectRatio='none' aria-hidden='true'><defs><linearGradient id='bois-" + n.id + "' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#7a5132'/><stop offset='0.7' stop-color='#4a2d17'/><stop offset='1' stop-color='#2e1a0b'/></linearGradient><clipPath id='" + idc + "'><path d='" + f.coque + "'/></clipPath></defs>";
-  s += f.greement;
+  s += f.greement.split("fill='#3f8a4f'").join("fill='" + pav.couleurs[0] + "' stroke='" + pav.couleurs[1] + "' stroke-width='1.5'");
   s += "<path d='" + f.coque + "' fill='url(#bois-" + n.id + ")' stroke='#24150a' stroke-width='2'/>";
   s += "<g clip-path='url(#" + idc + ")'><path d='" + f.bande + "' stroke='" + coul + "' stroke-width='9' fill='none'/>" + f.lignes.map((y) => "<path d='M 0 " + y + " Q 180 " + (y + 8) + " 366 " + (y - 24) + "' stroke='rgba(0,0,0,0.28)' stroke-width='1.5' fill='none'/>").join("") + "</g>" + f.fenetres;
   s += "<text x='180' y='" + (cp.quille - 12) + "' text-anchor='middle' font-family='IM Fell English SC, Georgia, serif' font-size='12' fill='#e7c977'>" + esc(S.navire.nom || n.nomParDefaut) + "</text>";
@@ -1184,8 +1415,8 @@ function rendreCale() {
   const p = $("#p-cale"); const scroll = p.scrollTop; const n = navire(); const H = n.coupe.hauteur;
   const s = salleSelectionnee();
   const rc = ratioCharge(); const st = stabilite(); const dq = desequilibre(); const cg = centreGravite();
-  let h = "<div class='nav-tete'><h2>" + esc(S.navire.nom) + "</h2><button class='btnMini' id='bRenommer' aria-label='Renommer le navire'>✏️</button></div>";
-  h += "<div class='tags' style='margin:-4px 0 8px'><span class='tag' style='background:" + n.couleurCoque + ";color:#fff'>" + esc(n.nom) + "</span><span class='tag'>" + S.equipage.length + "/" + n.equipageMax + " marins</span><span class='tag'>" + n.canons + " canons</span><span class='tag'>" + cales().length + " cale(s)</span></div>";
+  let h = "<div class='nav-tete'><h2>" + esc(S.navire.nom) + "</h2><button class='btnMini' id='bRenommer' aria-label='Renommer le navire'>✏️</button><button class='btnMini' id='bPerso' aria-label='Personnaliser le navire'>🎨</button></div>";
+  h += "<div class='tags' style='margin:-4px 0 8px'>" + (S.titre ? "<span class='tag or'>🎖️ " + esc(S.titre) + "</span>" : "") + "<span class='tag' style='background:" + couleurNavire(n) + ";color:#fff'>" + esc(n.nom) + "</span><span class='tag'>" + S.equipage.length + "/" + n.equipageMax + " marins</span><span class='tag'>" + n.canons + " canons</span><span class='tag'>" + cales().length + " cale(s)</span></div>";
   // Vue en coupe
   const y0 = hautCoupe(n); const Hv = H - y0;
   const incl = "transform:rotate(" + (dq * 2.2).toFixed(2) + "deg)";
@@ -1200,7 +1431,8 @@ function rendreCale() {
     "<div class='pas'><span>⚖️ Charge</span><b class='" + (rc > 1 ? "rouge" : rc > C.cale.seuilRalentissement ? "orange" : "") + "'>" + charge() + "/" + n.chargeMax + "</b></div>" +
     "<div class='pas'><span>⚓ Stabilité</span><b class='" + (st < 0.5 ? "orange" : "") + "'>" + pct(st) + "</b></div>" +
     "<div class='pas'><span>↔️ Assiette</span><b class='" + (Math.abs(dq) >= 0.15 ? "orange" : "") + "'>" + assiette + "</b><i class='assiette'><i style='left:" + (50 + dq * 50) + "%'></i></i></div>" +
-    "<div class='pas'><span>💨 Vitesse</span><b>" + fmt2(vitesseNavire()) + "/j</b></div></div>";
+    "<div class='pas'><span>💨 Vitesse</span><b>" + fmt2(vitesseNavire()) + "/j</b></div>" +
+    (() => { const na = noteArrimage(); return "<div class='pas' title='" + esc(na.details.join(", ") || "Rien à signaler") + "'><span>📋 Arrimage</span><b class='note note-" + na.lettre + "'>" + na.lettre + "</b></div>"; })() + "</div>";
   // Postes rapides
   const aSoin = sallesNavire().some((x) => typeSalle(x).action);
   h += "<div class='postes'><button data-poste='conseil'>✨ Placement conseillé</button><button data-poste='tempete'>⛈️ Tempête</button><button data-poste='repos' " + (aSoin ? "" : "disabled title='Ni infirmerie ni dortoir sur ce navire'") + ">🛏️ Soins</button></div>";
@@ -1216,6 +1448,7 @@ function rendreCale() {
   const on = (id, f) => { const b = $("#" + id); if (b) b.onclick = f; };
   on("bToutRanger", toutRanger);
   on("bRenommer", renommerNavire);
+  on("bPerso", personnaliser);
   if (s.cale) rendreDetail();
   rendreOnglets();
 }
@@ -1494,7 +1727,9 @@ function infoDestination() {
     if (illegaux.length) h += "<div style='margin-top:4px'><span class='tag rouge'>⚠️ " + illegaux.length + " item(s) interdit(s) à bord</span></div>";
   } else h += "<div class='nom titre' style='font-size:22px;color:var(--bois)'>🧭 Exploration</div><div class='muted'>Eaux inconnues : on y découvre des îles, mais le danger y est plus grand.</div>";
   const vj = joursDeVivres();
+  const na = noteArrimage();
   h += "<div class='puces' style='margin:10px 0'><div class='puce'>⏳ Durée<b>" + j.toFixed(1) + " j</b></div><div class='puce'>☠️ Danger<b>" + niveau(danger) + "</b></div><div class='puce'>🍞 Vivres<b style='color:" + (vj < j + 1 ? "var(--danger)" : "inherit") + "'>" + (vj >= 99 ? "—" : vj.toFixed(1) + " j") + "</b></div></div>";
+  h += "<div class='muted' style='margin-bottom:8px'>📋 Note d'arrimage : <b class='note note-" + na.lettre + "'>" + na.lettre + "</b>" + (na.details.length ? " · " + esc(na.details.join(", ")) : " · cale bien rangée") + "</div>";
   if (S.quai.length) h += "<div class='muted' style='margin-bottom:6px'>📦 " + S.quai.length + " item(s) encore sur le quai.</div>";
   return h + "<button class='primaire' id='bPartir' style='width:100%;min-height:50px;font-size:16px'>⛵ Lever l'ancre</button>";
 }
@@ -1518,6 +1753,102 @@ function majCarteVoyage() {
   document.querySelectorAll("#infoDest .vitesses button").forEach((b) => b.classList.toggle("actif", b.dataset.v === "p" ? enPause : !enPause && +b.dataset.v === vitesseIdx));
 }
 
+/* ---------- Onglet Quêtes ---------- */
+let ongletQuetes = "quetes";
+function barreRep(v) { const x = (v + 100) / 2; return "<div class='barre-rep'><i style='left:" + x + "%'></i>" + C.paliersReputation.map((p) => "<b style='left:" + (p.min + 100) / 2 + "%'></b>").join("") + "</div>"; }
+function tagPalier(v) { const p = palierDe(v); return "<span class='tag' style='background:" + p.couleur + ";color:#fff'>⭐ " + esc(p.nom) + "</span>"; }
+function etapeFaite(e) { return e.quete ? S.quetesFaites.includes(e.quete) : (S.stats[e.stat] || 0) >= (e.valeur || 1); }
+function texteEtape(e) {
+  if (!e.quete) return { titre: e.texte, ou: "" };
+  const q = DB.quetes[e.quete]; const enCours = S.contrats.find((c) => c.id === q.id);
+  let ou = "";
+  if (enCours) ou = "En cours : livrer à " + DB.iles[q.destination].nom;
+  else if (!prerequisOk(q)) ou = "🔒 Après l'étape précédente";
+  else ou = S.connues.includes(q.origine) ? "Proposée à " + DB.iles[q.origine].nom : "Proposée sur une île encore inconnue";
+  return { titre: q.titre, ou };
+}
+function rendreQuetes() {
+  const p = $("#p-quetes"); if (!p) return;
+  const segs = [["contrats", "Contrats", S.contrats.length], ["quetes", "Quêtes", 0], ["jalons", "Jalons", S.jalonsNonVus || 0], ["reputation", "Réputation", 0]];
+  let h = "<h2>Quêtes" + (estPC() ? " <button class='btnMini' style='float:right' data-fermer-quetes='1' aria-label='Fermer'>✕</button>" : "") + "</h2>";
+  h += "<div class='segment'>" + segs.map(([id, t, n]) => "<button data-segq='" + id + "' class='" + (ongletQuetes === id ? "actif" : "") + "'>" + t + (n ? " <small class='compte'>" + n + "</small>" : "") + "</button>").join("") + "</div>";
+  if (ongletQuetes === "contrats") {
+    h += S.contrats.length ? S.contrats.map(contratEnCours).join("") : "<div class='bloc muted'>Aucun contrat en cours. Les capitaineries des ports en proposent à chaque escale.</div>";
+    if (S.ile && offresIci().length) h += "<button class='primaire' data-a='capitainerie' style='width:100%'>📜 Voir les offres de " + esc(DB.iles[S.ile].nom) + "</button>";
+  }
+  if (ongletQuetes === "quetes") {
+    C.chaines.forEach((ch) => {
+      const faites = ch.etapes.filter(etapeFaite).length; const fini = faites === ch.etapes.length;
+      let premiereOuverte = true;
+      h += "<div class='bloc chaine" + (fini ? " finie" : "") + "'><div class='d-tete'><div class='nom' style='font-size:15px'>" + (fini ? "✅ " : "🧭 ") + esc(ch.titre) + "</div><span class='muted'>" + faites + "/" + ch.etapes.length + "</span></div>" + jauge(faites, ch.etapes.length) + "<ol class='etapes'>";
+      ch.etapes.forEach((e) => {
+        const f = etapeFaite(e); const t = texteEtape(e); const cls = f ? "faite" : premiereOuverte ? "active" : "verrou"; if (!f) premiereOuverte = false;
+        h += "<li class='" + cls + "'><b>" + esc(t.titre) + "</b>" + (!f && t.ou ? "<span class='sous'>" + esc(cls === "verrou" ? "🔒 À débloquer" : t.ou) + "</span>" : "") + "</li>";
+      });
+      h += "</ol></div>";
+    });
+    h += "<h3>👂 Rumeurs entendues</h3>";
+    h += S.rumeurs.length ? S.rumeurs.map((r) => { const [s, t] = statutRumeur(r); return "<div class='article'><div class='ai' style='background:" + DB.items[r.item].couleur + "'>" + DB.items[r.item].icone + "</div><div class='ac'><div class='nom' style='font-size:13px'>" + esc(texteRumeur(r)) + "</div><div class='effets' style='margin-top:4px'><span class='effet " + s + "'>" + esc(t) + "</span></div></div></div>"; }).join("") : "<div class='bloc muted'>Payez un verre dans une taverne pour entendre les nouvelles des marchés.</div>";
+  }
+  if (ongletQuetes === "jalons") {
+    S.jalonsNonVus = 0;
+    const faits = S.jalons.length;
+    h += "<div class='bloc' style='display:flex;align-items:center;gap:10px'><div style='flex:1'><div class='nom'>🎖️ " + esc(S.titre || "Aucun titre") + "</div><div class='muted'>" + faits + " / " + C.jalons.length + " jalons · génération " + S.generation + "</div>" + jauge(faits, C.jalons.length) + "</div><button data-a='personnaliser'>🎨 Personnaliser</button></div>";
+    const tri = [...C.jalons].sort((a, b) => { const pa = progressionJalon(a), pb = progressionJalon(b); return (pa.fait - pb.fait) || (pb.v / pb.cible - pa.v / pa.cible); });
+    tri.forEach((j) => {
+      const pr = progressionJalon(j);
+      h += "<div class='jalon" + (pr.fait ? " fait" : "") + "'><span class='j-ic'>" + (pr.fait ? "🏆" : "🔹") + "</span><div style='flex:1;min-width:0'><div class='nom'>" + esc(j.nom) + "</div><div class='sous'>" + esc(j.description) + "</div>" + (pr.fait ? "" : jauge(pr.v, pr.cible) + "<div class='sous'>" + (pr.cible > 1 ? arr(pr.v) + " / " + pr.cible : "Pas encore") + "</div>") + "<div class='effets' style='margin-top:4px'>" + texteRecompense(j.recompense || {}).map((t) => "<span class='effet" + (pr.fait ? " pos" : "") + "'>" + esc(t) + "</span>").join("") + "</div></div></div>";
+    });
+  }
+  if (ongletQuetes === "reputation") {
+    h += "<h3>🏝️ Îles</h3>";
+    S.connues.forEach((id) => {
+      const i = DB.iles[id]; const v = S.reputation.iles[id] || 0; const suiv = palierSuivant(v);
+      h += "<div class='bloc'><div class='d-tete'><div class='nom'>" + esc(i.nom) + "</div>" + tagPalier(v) + "</div>" + barreRep(v) + "<div class='sous'>" + esc(palierDe(v).resume) + "</div>" + (suiv ? "<div class='sous'>➤ <b>" + esc(suiv.nom) + "</b> à " + suiv.min + " (encore " + Math.ceil(suiv.min - v) + ") : " + esc(suiv.resume) + "</div>" : "") + "</div>";
+    });
+    h += "<h3>⚑ Factions</h3>";
+    C.factions.filter((f) => f.id !== "aucune").forEach((f) => {
+      const v = S.reputation.factions[f.id] || 0; const r = rivale(f.id); const nm = niveauMefiance(f.id);
+      const effets = C.factionsPaliers.filter((x) => x.faction === f.id);
+      h += "<div class='bloc'><div class='d-tete'><div class='nom'><span class='pastille-f' style='background:" + f.couleur + "'></span>" + esc(f.nom) + "</div><b>" + (v >= 0 ? "+" : "") + arr(v) + "</b></div>" + barreRep(v) +
+        "<div class='sous'>" + (r ? "Rivale : " + esc(DB.factions[r].nom) + " (perd " + pct(C.rivalites.taux) + " de vos gains ici)" : "") + "</div>" +
+        "<div class='sous'>Méfiance : <span class='tag' style='background:" + nm.couleur + ";color:#fff'>" + esc(nm.nom) + " · " + arr(S.mefiance[f.id] || 0) + "</span></div>" +
+        "<ul class='effets-f'>" + effets.map((x) => { const actif = x.seuil > 0 ? v >= x.seuil : v <= x.seuil; return "<li class='" + (actif ? (x.seuil > 0 ? "actif" : "malus") : "") + "'>" + (actif ? (x.seuil > 0 ? "✔ " : "⚠ ") : (x.seuil > 0 ? "🔒 " : "· ")) + "<b>" + (x.seuil > 0 ? "+" : "") + x.seuil + "</b> " + esc(x.texte) + "</li>"; }).join("") + "</ul></div>";
+    });
+    h += "<p class='muted'>La méfiance baisse de " + C.contrebande.mefianceBaisseParJour + " point par jour. Au-delà de " + C.mefiance.niveaux[2].min + ", les fouilles deviennent minutieuses ; au-delà de " + C.mefiance.niveaux[3].min + ", chaque arrivée dans ses ports est inspectée.</p>";
+  }
+  p.innerHTML = h;
+  p.querySelectorAll("[data-segq]").forEach((b) => b.onclick = () => { ongletQuetes = b.dataset.segq; rendreQuetes(); rendreOnglets(); });
+  p.querySelectorAll("[data-a='personnaliser']").forEach((b) => b.onclick = personnaliser);
+  p.querySelectorAll("[data-a='capitainerie']").forEach((b) => b.onclick = () => { vuePort = "capitainerie"; rendrePort(); document.body.classList.remove("voirQuetes"); afficherPanneau("p-port"); });
+  p.querySelectorAll("[data-fermer-quetes]").forEach((b) => b.onclick = () => document.body.classList.remove("voirQuetes"));
+}
+function objectifsHtml(i) {
+  const v = S.reputation.iles[i.id] || 0; const suiv = palierSuivant(v);
+  const cand = C.jalons.map((j) => [j, progressionJalon(j)]).filter(([, p]) => !p.fait && p.cible > 1).sort((a, b) => b[1].v / b[1].cible - a[1].v / a[1].cible);
+  let h = "<div class='bloc objectifs'><div class='nom' style='margin-bottom:4px'>🎯 Objectifs</div>";
+  if (suiv) h += "<div class='obj'><div class='d-tete'><span>⭐ <b>" + esc(suiv.nom) + "</b> à " + esc(i.nom) + "</span><span class='muted'>" + arr(Math.max(v, 0)) + " / " + suiv.min + "</span></div>" + jauge(Math.max(0, v - (palierDe(v).min > 0 ? palierDe(v).min : 0)), suiv.min - (palierDe(v).min > 0 ? palierDe(v).min : 0)) + "<div class='sous'>" + esc(suiv.resume) + "</div></div>";
+  if (cand.length) { const [j, p] = cand[0]; h += "<div class='obj'><div class='d-tete'><span>🏆 <b>" + esc(j.nom) + "</b></span><span class='muted'>" + arr(p.v) + " / " + p.cible + "</span></div>" + jauge(p.v, p.cible) + "<div class='sous'>" + esc(j.description) + "</div></div>"; }
+  return h + "<button class='btnMini' data-a='quetes' style='width:100%;margin-top:4px'>📜 Toutes les quêtes et jalons ›</button></div>";
+}
+async function personnaliser() {
+  const coul = C.cosmetiques.couleurs.filter((c) => cosmetiqueDispo("couleurs", c.id)); const pav = C.cosmetiques.pavillons.filter((c) => cosmetiqueDispo("pavillons", c.id));
+  const verrou = (t) => C.cosmetiques[t].length - C.cosmetiques[t].filter((c) => cosmetiqueDispo(t, c.id)).length;
+  const html = () => "<p class='muted'>Les couleurs, pavillons et titres se gagnent avec les jalons.</p>" +
+    "<div class='nom'>Couleur de la coque</div><div class='nuancier'>" + coul.map((c) => "<button class='nuance" + ((S.apparence.couleur || "modele") === c.id ? " choisi" : "") + "' data-couleur='" + c.id + "' title='" + esc(c.nom) + "' style='background:" + (c.couleur || navire().couleurCoque) + "'>" + (c.id === "modele" ? "✦" : "") + "</button>").join("") + "</div><div class='sous'>" + (verrou("couleurs") ? "🔒 " + verrou("couleurs") + " à débloquer" : "Toutes débloquées") + "</div>" +
+    "<div class='nom' style='margin-top:10px'>Pavillon</div><div class='nuancier'>" + pav.map((p) => "<button class='nuance drapeau" + ((S.apparence.pavillon || "marchand") === p.id ? " choisi" : "") + "' data-pavillon='" + p.id + "' title='" + esc(p.nom) + "' style='background:linear-gradient(135deg," + p.couleurs[0] + " 50%," + p.couleurs[1] + " 50%)'></button>").join("") + "</div><div class='sous'>" + (verrou("pavillons") ? "🔒 " + verrou("pavillons") + " à débloquer" : "Tous débloqués") + "</div>" +
+    "<div class='nom' style='margin-top:10px'>Titre du capitaine</div>" + (S.cosmetiques.titres.length ? "<div class='nuancier'>" + ["(aucun)"].concat(S.cosmetiques.titres).map((t) => "<button class='titre-btn" + ((S.titre || "(aucun)") === t ? " choisi" : "") + "' data-titre='" + esc(t) + "'>" + esc(t) + "</button>").join("") + "</div>" : "<div class='sous'>Aucun titre pour l'instant.</div>");
+  const pr = modale({ titre: "Personnaliser le navire", icone: "🎨", theme: "tresor", html: html(), boutons: [{ t: "Terminé", primaire: true }] });
+  const lier = () => {
+    const m = $("#modale");
+    m.querySelectorAll("[data-couleur]").forEach((b) => b.onclick = () => { S.apparence.couleur = b.dataset.couleur; maj(); });
+    m.querySelectorAll("[data-pavillon]").forEach((b) => b.onclick = () => { S.apparence.pavillon = b.dataset.pavillon; maj(); });
+    m.querySelectorAll("[data-titre]").forEach((b) => b.onclick = () => { S.titre = b.dataset.titre === "(aucun)" ? null : b.dataset.titre; maj(); });
+  };
+  const maj = () => { const corps = $("#modale .m-corps > div"); if (corps) corps.innerHTML = html(); lier(); vibrer(8); sauver(); rendreCale(); rendreEquipage(); rendreQuetes(); };
+  lier(); await pr; rendreTout();
+}
+
 /* ---------- Panneau Équipage ---------- */
 function portraitSvg(p, t) {
   t = t || 64; let s = "<svg width='" + t + "' height='" + t + "' viewBox='0 0 64 64' style='flex:none;border-radius:10px;border:2px solid var(--laiton)'>";
@@ -1532,7 +1863,7 @@ function portraitSvg(p, t) {
 }
 function rendreEquipage() {
   const p = $("#p-equipage"); const n = navire();
-  let h = "<h2>Équipage <span class='muted' style='font-family:Inter;font-size:14px'>" + S.equipage.length + "/" + n.equipageMax + "</span>" + (estPC() ? " <button style='float:right;min-height:30px;padding:2px 10px' onclick=\"document.body.classList.remove('voirEquipage')\">✕</button>" : "") + "</h2>";
+  let h = (S.titre ? "<div class='tag or' style='margin-bottom:6px'>🎖️ " + esc(S.titre) + "</div>" : "") + "<h2>Équipage <span class='muted' style='font-family:Inter;font-size:14px'>" + S.equipage.length + "/" + n.equipageMax + "</span>" + (estPC() ? " <button style='float:right;min-height:30px;padding:2px 10px' onclick=\"document.body.classList.remove('voirEquipage')\">✕</button>" : "") + "</h2>";
   h += "<div class='bloc'><div class='ligne'><div class='g'><div class='nom'>🤝 Cohésion</div>" + jauge(S.cohesion) + "</div><b>" + arr(S.cohesion) + "</b></div><div class='muted'>Génération " + S.generation + " · vivres frais il y a " + S.joursSansFrais + " j" + (S.joursSansFrais > C.equipage.scorbutApresJours ? " — <b style='color:var(--danger)'>scorbut !</b>" : "") + "</div></div>";
   S.equipage.forEach((m) => {
     h += "<div class='bloc marin'>" + portraitSvg(m.portrait, 64) + "<div style='flex:1;min-width:0'><div class='nom' style='font-size:15px'>" + esc(m.nom) + "</div><div class='muted'>" + esc(DB.roles[m.role].nom) + (m.secondaire ? " · second : " + esc(DB.roles[m.secondaire].nom) : "") + " · " + m.salaire + " or/j</div>" +
@@ -1562,7 +1893,7 @@ let minuteurToast = null;
 function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.add("vu"); clearTimeout(minuteurToast); minuteurToast = setTimeout(() => el.classList.remove("vu"), 2400); }
 
 async function menu() {
-  const r = await modale({ titre: "Menu", icone: "☰", html: "<p class='muted'>Prototype 0.4.2 · la partie est sauvegardée automatiquement dans ce navigateur.</p>", boutons: [{ t: "Reprendre", primaire: true }, { t: "Comment jouer" }, { t: "Nouvelle partie" }] });
+  const r = await modale({ titre: "Menu", icone: "☰", html: "<p class='muted'>Prototype 0.5 · la partie est sauvegardée automatiquement dans ce navigateur.</p>", boutons: [{ t: "Reprendre", primaire: true }, { t: "Comment jouer" }, { t: "Nouvelle partie" }] });
   if (r === 1) aide();
   if (r === 2) { const c = await modale({ titre: "Nouvelle partie ?", icone: "⚠️", theme: "echec", html: "<p>La partie en cours sera effacée.</p>", boutons: [{ t: "Recommencer", primaire: true }, { t: "Annuler" }] }); if (c === 0) { nouvellePartie(); destination = null; selection = null; enPause = true; vuePort = "accueil"; precedent = null; rendreTout(); afficherPanneau("p-port"); } }
 }
@@ -1572,7 +1903,7 @@ function aide() {
     "<li><b>⛵ Bateau</b> : la vue en coupe montre les salles et l'équipage. Touchez une salle pour l'ouvrir. Glissez un portrait d'une salle à l'autre : une compétence ne compte que dans la bonne salle (navigation sur le pont, cuisine en coquerie…). Les boutons Conseillé, Tempête et Soins réorganisent tout d'un geste.</li><li><b>📦 Cales</b> : glissez les items du quai vers la grille, ou utilisez « Tout ranger ». Glissez un item sur une autre cale de la vue en coupe pour l'y déplacer. Pour pivoter : double-tap, un 2ᵉ doigt pendant le glisser, ou la touche R. Un <b>!</b> orange signale un item mal placé. Chaque item doit reposer sur le plancher ou sur un autre item : achetez des <b>planches</b> au marché pour créer des étagères et surélever la marchandise.</li>" +
     "<li><b>🗺️ Carte</b> : touchez une île pour y aller, ou la mer et le brouillard pour explorer.</li>" +
     "<li><b>⛵ En mer</b> : ⏸ x1 x2 x4 règlent le temps. L'équipage mange 1 ration par jour. Les événements mettent le jeu en pause.</li>" +
-    "<li><b>⚠️ Contrebande</b> : très rentable là où elle est interdite, mais gare aux inspections.</li>" +
+    "<li><b>📜 Quêtes</b> : suivez vos contrats, les chaînes de quêtes, les rumeurs, les jalons (qui débloquent couleurs, pavillons et titres) et votre réputation. Chaque palier de réputation sur une île apporte des avantages ; gagner la confiance d'une faction agace sa rivale.</li><li><b>🍺 Rumeurs</b> : à la taverne, un verre permet d'apprendre une pénurie ou une abondance à venir… parfois fausse.</li><li><b>⚠️ Contrebande</b> : très rentable là où elle est interdite, mais gare aux inspections et à la méfiance des factions.</li>" +
     "<li><b>🌊 Naufrage</b> : un seul marin survit et repart sur une barque. Le coffre à terre est conservé.</li></ul>", boutons: [{ t: "À la mer !", primaire: true }] });
 }
 
@@ -1593,7 +1924,7 @@ function demarrer() {
   window.addEventListener("resize", () => { if (glisse || Math.abs(window.innerWidth - largeurPrec) < 20) return; largeurPrec = window.innerWidth; rendreTout(); });
   requestAnimationFrame(boucle);
   if (!reprise) aide();
-  window.__jeu = { get S() { return S; }, DB, interrompreNavigation, jeterAncre, competence, competenceSalle, placementConseille, posteTempete, posteRepos, deplacerMarin, statutMarin, changerDeCale, desequilibre, stabilite, centreGravite, calePrincipale, cales, vitesseNavire, avancer, arriver, finDeJournee, lancerEvenement, naufrage, rendreTout, raisonPlacement, appliquerGravite, creerItem, retirer, placerAuto };
+  window.__jeu = { get S() { return S; }, DB, verifierJalons, changerRep, palierIle, noteArrimage, ecouterRumeur, genererOffres, progressionJalon, personnaliser, creerEvenementMarche, interrompreNavigation, jeterAncre, competence, competenceSalle, placementConseille, posteTempete, posteRepos, deplacerMarin, statutMarin, changerDeCale, desequilibre, stabilite, centreGravite, calePrincipale, cales, vitesseNavire, avancer, arriver, finDeJournee, lancerEvenement, naufrage, rendreTout, raisonPlacement, appliquerGravite, creerItem, retirer, placerAuto };
 }
 demarrer();
 })();

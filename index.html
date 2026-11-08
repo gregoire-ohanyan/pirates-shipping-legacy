@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icones/favicon.png">
 <link rel="apple-touch-icon" href="icones/apple-touch-icon.png">
-<title>Pirates : Shipping Legacy — Prototype 0.4.2</title>
+<title>Pirates : Shipping Legacy — Prototype 0.5</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -300,12 +300,51 @@ details.journal .liste div{padding:4px 0;border-bottom:1px dotted var(--parchemi
   .panneau.actif{animation:none}
   #p-carte{order:1}#p-cale{order:2}#p-port{order:3}
   #p-equipage{order:4;display:none !important}
+  #p-quetes{order:5;display:none !important}
+  body.voirQuetes #p-quetes{display:block !important;position:fixed;right:0;top:48px;bottom:0;width:400px;z-index:40;box-shadow:-6px 0 18px rgba(0,0,0,.4);animation:glisseG .2s}
+  #btnQuetesPC{display:inline-flex !important}
   body.voirEquipage #p-equipage{display:block !important;position:fixed;right:0;top:48px;bottom:0;width:360px;z-index:40;box-shadow:-6px 0 18px rgba(0,0,0,.4);animation:glisseG .2s}
   @keyframes glisseG{from{transform:translateX(40px);opacity:0}}
   #btnEquipagePC{display:inline-flex !important}
   .quai-barre{bottom:-20px}
 }
 #btnEquipagePC{display:none}
+#btnQuetesPC{display:none}
+#btnQuetesPC.nouveau{background:var(--danger);border-color:var(--danger)}
+/* ---------- 0.5 : progression ---------- */
+#onglets button{font-size:11px}
+.contrat.rare{background:linear-gradient(135deg,#fff3c4,#f0d27a);border-color:#b8902e;box-shadow:0 2px 0 #b8902e,0 0 0 2px rgba(231,201,119,.5)}
+.objectifs .obj{padding:6px 0;border-top:1px dashed var(--parchemin2)}
+.objectifs .obj:first-of-type{border-top:0}
+.barre-rep{position:relative;height:8px;border-radius:4px;margin:6px 0 4px;background:linear-gradient(90deg,#b23a2e 0%,#c47a1a 30%,#8a7a5e 45%,#8a7a5e 55%,#5b8a3a 60%,#3f8a4f 75%,#b8902e 100%)}
+.barre-rep b{position:absolute;top:-2px;width:1px;height:12px;background:rgba(42,30,18,.4)}
+.barre-rep i{position:absolute;top:-4px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:#fbf3dc;border:3px solid var(--encre);box-sizing:border-box}
+.chaine .etapes{margin:8px 0 0;padding-left:22px}
+.chaine .etapes li{margin:4px 0}
+.chaine .etapes li .sous{display:block}
+.chaine .etapes li.faite{color:#3f8a4f}
+.chaine .etapes li.faite b{text-decoration:line-through;opacity:.8}
+.chaine .etapes li.active::marker{color:var(--alerte);font-weight:700}
+.chaine .etapes li.verrou{opacity:.55}
+.chaine.finie{background:#eaf3e2}
+.jalon{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;background:var(--parchemin-clair);border:1px solid var(--parchemin2);border-radius:12px;margin-bottom:8px}
+.jalon.fait{background:linear-gradient(135deg,#fff6d6,#f3e2a8);border-color:#d4b45a}
+.jalon .j-ic{font-size:22px}
+.effets-f{margin:6px 0 0;padding-left:0;list-style:none;font-size:12.5px}
+.effets-f li{padding:2px 0;color:var(--encre2)}
+.effets-f li.actif{color:#1e5128;font-weight:600}
+.effets-f li.malus{color:#8a2014;font-weight:600}
+.pastille-f{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.segment .compte{background:var(--danger);color:#fff;border-radius:8px;padding:0 6px;font-size:10.5px}
+.nuancier{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 2px}
+.nuance{width:44px;height:44px;border-radius:50%;border:3px solid #fbf3dc;box-shadow:0 0 0 1px #8c6239;padding:0;min-height:0;color:#fff;font-size:16px}
+.nuance.drapeau{border-radius:8px;width:52px;height:36px}
+.nuance.choisi{box-shadow:0 0 0 3px #e7b92f,0 0 0 5px #4e321c}
+.titre-btn{min-height:36px;padding:4px 10px;font-size:12.5px}
+.titre-btn.choisi{background:var(--bois);color:#fff2d2}
+.note{display:inline-block;min-width:22px;text-align:center;border-radius:6px;padding:0 5px;color:#fff}
+.note-A{background:#3f8a4f}.note-B{background:#6a9a3a}.note-C{background:#c4a21a}.note-D{background:#c47a1a}.note-E{background:#b23a2e}
+.pastilles{grid-template-columns:repeat(auto-fit,minmax(78px,1fr)) !important}
 </style>
 </head>
 <body>
@@ -315,11 +354,13 @@ details.journal .liste div{padding:4px 0;border-bottom:1px dotted var(--parchemi
     <section class="panneau" id="p-cale"></section>
     <section class="panneau" id="p-carte"></section>
     <section class="panneau" id="p-equipage"></section>
+    <section class="panneau" id="p-quetes"></section>
   </main>
   <nav id="onglets">
     <button data-p="p-port" class="actif"><span>⚓</span>Port</button>
     <button data-p="p-cale"><span>⛵</span>Bateau</button>
     <button data-p="p-carte"><span>🗺️</span>Carte</button>
+    <button data-p="p-quetes"><span>📜</span>Quêtes</button>
     <button data-p="p-equipage"><span>👥</span>Équipage</button>
   </nav>
   <div id="voile"><div id="modale"></div></div>

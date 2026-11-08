@@ -1,6 +1,6 @@
 /* Service worker : permet de jouer hors ligne une fois le jeu ouvert une première fois.
    Changez VERSION à chaque mise en ligne pour forcer la mise à jour chez les joueurs. */
-const VERSION = "psl-0.4.2";
+const VERSION = "psl-0.5.0";
 const FICHIERS = [
   "./", "./index.html", "./manifest.webmanifest",
   "./js/config.js", "./js/game.js",

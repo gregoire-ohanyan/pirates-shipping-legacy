@@ -3,6 +3,48 @@
 Toutes les modifications notables du jeu sont listées ici, de la plus récente à la plus ancienne.
 Chaque version correspond à la valeur `VERSION` de `sw.js` (par exemple `psl-0.3.0` pour la 0.3.0).
 
+## [0.5.0] — 2026-11-08
+
+### Ajouté
+- **Onglet « 📜 Quêtes »** (5ᵉ onglet en bas sur mobile, bouton en haut sur PC) avec quatre sections :
+  - **Contrats** en cours ;
+  - **Quêtes et chaînes**, avec les étapes et les rumeurs entendues ;
+  - **Livre des jalons** ;
+  - **Réputation** par île et par faction.
+  
+  Une pastille signale les nouveautés.
+- **Paliers de réputation par île** : Hostile, Méfiant, Inconnu, Connu, Estimé, Notable. Chaque palier change les prix, le nombre et la récompense des contrats, l'accès aux quêtes, le prix des réparations, la fréquence des inspections, les contrats rares, les recrues et la taxe d'entrée. Un port hostile reste ouvert, mais devient très cher. Le palier s'affiche sur la bannière du port, et un message apparaît au changement de palier.
+- **Paliers de faction** à +20, +40 et −30 :
+  - goélette réservée aux amis de la Couronne ;
+  - lettre de marque ;
+  - coffre de la Compagnie dans tous les ports ;
+  - boycott ;
+  - recrues et vivres moins chers chez les Colonies ;
+  - marché noir et pavillon ami avec la Confrérie ;
+  - etc.
+- **Rivalités** : Couronne et Confrérie, Compagnie et Colonies. La faction rivale perd 25 % de chaque gain de réputation.
+- **Méfiance des autorités** en quatre niveaux, de Calme à Recherché. Elle modifie la fréquence des inspections et l'efficacité des cachettes.
+- **16 jalons** (premier contrat, cartographe, équipage complet, fortune, générations…). Chaque jalon débloque une récompense, surtout cosmétique : couleur de coque, pavillon ou titre de capitaine. Une fenêtre « Jalon atteint ! » s'affiche à chaque déblocage.
+- **🎨 Personnaliser le navire** (onglet Bateau) : couleur de coque, pavillon et titre, visibles sur la vue en coupe et sur la carte.
+- **Carte « Objectifs »** sur l'accueil du port : prochain palier de l'île et jalon le plus proche.
+- **Marché vivant** : des pénuries (prix ×1,8) et des abondances (×0,55) apparaissent et durent quelques jours. Elles sont signalées sur les étiquettes du marché.
+- **Rumeurs à la taverne**, pour le prix d'un verre, une par port et par jour. Elles annoncent une pénurie ou une abondance à venir, sont fiables à 70 % (plus avec un bon commerçant), puis sont confirmées ou démenties à l'arrivée.
+- **Contrats rares ✨**, mis en valeur en doré : récompense ×2,5, délai plus court et état exigé élevé. Ils sont plus fréquents quand on est estimé.
+- **Livraison parfaite** : +20 % de récompense si la marchandise arrive à 95 % d'état ou plus.
+- **Note d'arrimage** de A à E, calculée sur la répartition, l'assiette et les protections. Elle s'affiche sur l'onglet Bateau et sur la carte.
+- **Bilan de la traversée** à chaque arrivée : durée, gains, livraisons (dont parfaites), note d'arrimage, incidents et record battu.
+- Nouvelles quêtes : « Des épices pour le bal » et « Soie pour la robe ». Quatre chaînes sont regroupées : gouverneur, mariage, Confrérie et Pendu.
+- Nouveaux blocs dans `js/config.js` :
+  - `paliersReputation`, `factionsPaliers`, `rivalites`, `mefiance.niveaux` ;
+  - `cosmetiques`, `jalons` ;
+  - `marche`, `rumeurs`, `contratsRares` ;
+  - `livraisonParfaite`, `noteArrimage`, `chaines`.
+
+### Modifié
+- L'effet de la réputation sur les prix passe par les paliers (`commerce.reputationPrix` vaut 0), et l'effet de la méfiance sur les inspections passe par ses niveaux.
+- La goélette exige 20 de réputation auprès de la Couronne.
+- Les anciennes sauvegardes sont migrées automatiquement avec les nouveaux champs.
+
 ## [0.4.2] — 2026-11-08
 
 ### Ajouté
