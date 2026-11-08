@@ -1,6 +1,6 @@
 # Pirates : Shipping Legacy — prototype
 
-Jeu de gestion maritime pour mobile et PC. On joue un marchand dans un archipel à l'âge d'or de la piraterie : on accepte des contrats, on range sa cargaison dans la cale (poids, volume, fragile, périssable, craint l'eau, contrebande), puis on navigue d'île en île en affrontant tempêtes, récifs, pirates et inspections.
+Jeu de gestion maritime pour mobile et PC. On joue un marchand dans un archipel à l'âge d'or de la piraterie : on accepte des contrats, on range sa cargaison dans les cales du navire (poids, volume, fragile, périssable, craint l'eau, contrebande), on place son équipage dans les salles du bateau, puis on navigue d'île en île en affrontant tempêtes, récifs, pirates et inspections.
 
 **Jouer :** ouvrez la page GitHub Pages du dépôt sur votre téléphone, puis :
 - **Android (Chrome)** : menu ⋮ → *Installer l'application* (ou *Ajouter à l'écran d'accueil*).
@@ -13,7 +13,7 @@ Le jeu s'ouvre alors en plein écran comme une application. Il fonctionne hors l
 | Fichier | Rôle |
 | --- | --- |
 | `index.html` | Page du jeu : structure et styles |
-| `js/config.js` | **Tous les paramètres d'équilibrage** : marchandises, îles, factions, navires, marins, quêtes, événements, temps |
+| `js/config.js` | **Tous les paramètres d'équilibrage** : marchandises, îles, factions, salles, types de cale, plans des navires, marins, quêtes, événements, temps |
 | `js/game.js` | Moteur et interface (ne contient aucune valeur de jeu) |
 | `manifest.webmanifest` | Nom, icônes et couleurs de l'application installée |
 | `sw.js` | Mise en cache pour jouer hors ligne |

@@ -1,5 +1,5 @@
 /* =====================================================================
-   PIRATES : SHIPPING LEGACY — FICHIER DE PARAMÈTRES (prototype 0.3)
+   PIRATES : SHIPPING LEGACY — FICHIER DE PARAMÈTRES (prototype 0.4)
    ---------------------------------------------------------------------
    Tout l'équilibrage du jeu se règle ICI, à la main.
    Le moteur (game.js) ne contient aucune valeur de jeu : il lit ce fichier.
@@ -151,22 +151,91 @@ window.CONFIG = {
   ],
 
   /* ------------------------------------------------------------------
+     SALLES DU NAVIRE
+     Chaque marin se trouve dans une salle. Une compétence ne compte que dans les salles
+     qui la fournissent, avec le multiplicateur indiqué (1 = 100 %, 0.5 = 50 %).
+     competences : { idCompetence: multiplicateur }
+     action      : "soin"  = les marins sans compétence de médecine y sont patients (ne travaillent pas, guérissent vite)
+                   "repos" = les occupants se reposent (ne travaillent pas, santé et moral remontent)
+     critique    : true = contour rouge si la salle est vide
+     ------------------------------------------------------------------ */
+  salles: {
+    types: [
+      { id: "pont",       nom: "Pont",       icone: "🧭", critique: true, competences: { navigation: 1, vigie: 0.5, defense: 0.5 }, description: "Navigation à 100 %, vigie et défense à 50 %." },
+      { id: "vigie",      nom: "Vigie",      icone: "🔭", competences: { vigie: 1 }, description: "Repère les dangers plus tôt : récifs, voiles hostiles, patrouilles." },
+      { id: "coquerie",   nom: "Coquerie",   icone: "🍲", competences: { cuisine: 1 }, description: "Cuisine à 100 % : moral en hausse, vivres plus nourrissants." },
+      { id: "infirmerie", nom: "Infirmerie", icone: "⚕️", competences: { medecine: 1 }, action: "soin", description: "Médecine à 100 %. Les autres marins placés ici sont patients : ils ne travaillent pas mais guérissent vite." },
+      { id: "batterie",   nom: "Batterie",   icone: "💣", competences: { defense: 1 }, description: "Défense à 100 % avec les canons du navire." },
+      { id: "dortoir",    nom: "Dortoir",    icone: "🛏️", action: "repos", description: "Les occupants se reposent : santé et moral remontent, mais ils ne travaillent pas." },
+      { id: "cale",       nom: "Cale",       icone: "📦", competences: { arrimage: 1, charpente: 1 }, description: "Le maître d'arrimage protège la cargaison de CETTE cale ; le charpentier y colmate les voies d'eau." }
+    ],
+    rendements: [1, 0.5, 0.25],   // 1er, 2e, 3e marin (et suivants) qui apportent la même compétence dans une salle
+    competencesGlobales: ["commerce"], // compétences qui comptent quelle que soit la salle
+    soinPatientParJour: 6,        // santé gagnée par jour par un patient, x (1 + médecine de l'infirmerie)
+    reposSanteParJour: 4,         // au dortoir
+    reposMoralParJour: 4
+  },
+
+  /* ------------------------------------------------------------------
+     TYPES DE CALE
+     fondHumide   : true = la rangée du bas est humide
+     toutVentile  : true = toutes les cases sont ventilées
+     ventilation  : multiplicateur de pourriture dans les cases ventilées de cette cale (sinon cale.ventilation)
+     accepte      : liste d'ids d'items acceptés (absent = tout)
+     discretion   : chance qu'un item de contrebande rangé ici échappe à une inspection
+     ------------------------------------------------------------------ */
+  typesCale: [
+    { id: "classique", nom: "Cale",           fondHumide: true,  description: "Fond de cale humide, quelques colonnes ventilées." },
+    { id: "seche",     nom: "Cale sèche",     fondHumide: false, description: "Aucune humidité : idéale pour le sucre, le tabac, les épices." },
+    { id: "ventilee",  nom: "Cale ventilée",  fondHumide: true,  toutVentile: true, ventilation: 0.4, description: "Entièrement ventilée : les périssables pourrissent bien moins vite." },
+    { id: "soute",     nom: "Soute à poudre", fondHumide: false, accepte: ["poudre", "mousquets"], description: "Doublée de cuivre : seulement la poudre et les armes, à l'abri des incendies." },
+    { id: "cachee",    nom: "Cale cachée",    fondHumide: false, discretion: 0.95, description: "Compartiment secret : la contrebande y est presque invisible." }
+  ],
+
+  /* ------------------------------------------------------------------
      NAVIRES
-     colonnes / rangees : taille de la grille de cale (rangée du bas = fond de cale humide)
-     chargeMax          : poids maximal avant surcharge
-     vitesse            : unités de carte parcourues par jour
-     coqueMax           : points de coque
-     equipageMax        : nombre maximal de marins
-     canons             : nombre de canons (défense)
-     colonnesVentilees  : colonnes (0 = proue/gauche) près des écoutilles : les périssables y pourrissent moins vite
-     cachette           : cases [colonne, rangée] du compartiment caché (actif seulement avec l'amélioration "cachette")
-     emplacements       : nombre maximal d'améliorations
-     prix               : prix au chantier (0 = non achetable)
+     chargeMax / vitesse / coqueMax / equipageMax / canons / emplacements / prix : comme avant
+     nomParDefaut : nom donné au navire à l'achat (le joueur peut le renommer)
+     silhouette   : dessin utilisé ("barque", "cotre", "goelette")
+     couleurCoque : couleur de la bande peinte
+     coupe        : taille de la vue en coupe (largeur 366) : hauteur, ligne du pont, bas de la quille
+     salles       : liste des salles. x, y, l, h = rectangle dans la vue en coupe ; places = marins max.
+                    Une cale porte "cale" : type (voir typesCale), colonnes, rangees,
+                    colonnesVentilees (0 = poupe, à gauche), cachette (cases actives avec l'amélioration "cachette")
      ------------------------------------------------------------------ */
   navires: [
-    { id: "barque",   nom: "Barque",   colonnes: 4,  rangees: 2, chargeMax: 20,  vitesse: 9,  coqueMax: 40,  equipageMax: 1,  canons: 0, colonnesVentilees: [1, 2],      cachette: [[0, 1]],                 emplacements: 1, prix: 0 },
-    { id: "cotre",    nom: "Cotre",    colonnes: 8,  rangees: 4, chargeMax: 60,  vitesse: 12, coqueMax: 100, equipageMax: 3,  canons: 2, colonnesVentilees: [3, 4],      cachette: [[0, 3], [1, 3]],         emplacements: 2, prix: 500 },
-    { id: "goelette", nom: "Goélette", colonnes: 10, rangees: 5, chargeMax: 110, vitesse: 15, coqueMax: 160, equipageMax: 6,  canons: 6, colonnesVentilees: [4, 5],      cachette: [[0, 4], [1, 4], [2, 4]], emplacements: 3, prix: 1800 }
+    { id: "barque", nom: "Barque", nomParDefaut: "La Coquille", silhouette: "barque", couleurCoque: "#6b6b3a",
+      chargeMax: 20, vitesse: 9, coqueMax: 40, equipageMax: 1, canons: 0, emplacements: 1, prix: 0,
+      coupe: { hauteur: 226, pont: 100, quille: 210 },
+      salles: [
+        { id: "pont", type: "pont", places: 1, x: 92, y: 54, l: 184, h: 44 },
+        { id: "cale", type: "cale", places: 1, x: 118, y: 110, l: 132, h: 62,
+          cale: { type: "classique", colonnes: 4, rangees: 2, colonnesVentilees: [1, 2], cachette: [[0, 1]] } }
+      ] },
+
+    { id: "cotre", nom: "Cotre", nomParDefaut: "Le Furet", silhouette: "cotre", couleurCoque: "#8a2f2f",
+      chargeMax: 60, vitesse: 12, coqueMax: 100, equipageMax: 3, canons: 2, emplacements: 2, prix: 500,
+      coupe: { hauteur: 310, pont: 140, quille: 294 },
+      salles: [
+        { id: "pont", type: "pont", places: 3, x: 62, y: 88, l: 236, h: 48 },
+        { id: "coquerie", type: "coquerie", places: 1, x: 64, y: 150, l: 234, h: 56 },
+        { id: "cale", type: "cale", places: 1, x: 86, y: 212, l: 194, h: 62,
+          cale: { type: "classique", colonnes: 8, rangees: 4, colonnesVentilees: [3, 4], cachette: [[0, 3], [1, 3]] } }
+      ] },
+
+    { id: "goelette", nom: "Goélette", nomParDefaut: "La Mouette", silhouette: "goelette", couleurCoque: "#2f5d4e",
+      chargeMax: 110, vitesse: 15, coqueMax: 160, equipageMax: 6, canons: 6, emplacements: 3, prix: 1800,
+      coupe: { hauteur: 340, pont: 140, quille: 326 },
+      salles: [
+        { id: "vigie", type: "vigie", places: 1, x: 70, y: 4, l: 100, h: 48 },
+        { id: "pont", type: "pont", places: 4, x: 36, y: 88, l: 290, h: 48 },
+        { id: "coquerie", type: "coquerie", places: 1, x: 40, y: 150, l: 88, h: 64 },
+        { id: "infirmerie", type: "infirmerie", places: 2, x: 134, y: 150, l: 98, h: 64 },
+        { id: "seche", type: "cale", nom: "Cale sèche", places: 0, x: 238, y: 150, l: 90, h: 64,
+          cale: { type: "seche", colonnes: 4, rangees: 2, colonnesVentilees: [], cachette: [] } },
+        { id: "cale", type: "cale", nom: "Cale principale", places: 1, x: 62, y: 220, l: 236, h: 72,
+          cale: { type: "classique", colonnes: 10, rangees: 4, colonnesVentilees: [4, 5], cachette: [[0, 3], [1, 3]] } }
+      ] }
   ],
 
   /* ------------------------------------------------------------------

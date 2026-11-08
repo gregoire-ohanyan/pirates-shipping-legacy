@@ -1,5 +1,5 @@
 /* =====================================================================
-   PIRATES : SHIPPING LEGACY — MOTEUR DU PROTOTYPE 0.3
+   PIRATES : SHIPPING LEGACY — MOTEUR DU PROTOTYPE 0.4
    Ce fichier ne contient aucune valeur d'équilibrage : tout est lu
    dans js/config.js (window.CONFIG).
    ===================================================================== */
@@ -11,7 +11,8 @@ const parId = (liste) => Object.fromEntries(liste.map((e) => [e.id, e]));
 const DB = {
   items: parId(C.items), iles: parId(C.iles), factions: parId(C.factions), navires: parId(C.navires),
   amelios: parId(C.ameliorations), roles: parId(C.roles.liste), marins: parId(C.marins), traits: parId(C.traits),
-  evts: parId(C.evenements), quetes: parId(C.quetes)
+  evts: parId(C.evenements), quetes: parId(C.quetes),
+  sallesTypes: parId(C.salles.types), typesCale: parId(C.typesCale)
 };
 const CLE_SAUVEGARDE = "psl-proto-sauvegarde-v1";
 
@@ -47,7 +48,7 @@ function nouvellePartie() {
     coffre: 0,
     ile: d.ile,
     pos: { x: ileDep.x, y: ileDep.y },
-    navire: { type: d.navire, coque: DB.navires[d.navire].coqueMax, amelios: [] },
+    navire: { type: d.navire, coque: DB.navires[d.navire].coqueMax, amelios: [], nom: DB.navires[d.navire].nomParDefaut },
     cale: [], quai: [],
     equipage: d.equipage.map(creerMarin),
     marinsPasses: [...d.equipage],
@@ -70,6 +71,7 @@ function nouvellePartie() {
   C.iles.forEach((i) => { S.reputation.iles[i.id] = 0; S.prixMod[i.id] = {}; });
   C.factions.forEach((f) => { S.reputation.factions[f.id] = 0; S.mefiance[f.id] = 0; });
   S.connues.forEach((id) => devoilerAutour(DB.iles[id].x, DB.iles[id].y));
+  placementConseille();
   d.cargaison.forEach(([id, n]) => { for (let k = 0; k < n; k++) { const it = creerItem(id); if (!placerAuto(it)) S.quai.push(it); } });
   genererOffres(S.ile);
   journal("Nouvelle partie. Votre cotre est amarré à <b>" + esc(ileDep.nom) + "</b>.");
@@ -78,7 +80,7 @@ function nouvellePartie() {
 
 function creerMarin(id) {
   const m = DB.marins[id];
-  return { id, nom: m.nom, role: m.role, secondaire: m.secondaire, traits: [...m.traits], sante: 100, moral: 70, salaire: m.salaire, portrait: m.portrait };
+  return { id, nom: m.nom, role: m.role, secondaire: m.secondaire, traits: [...m.traits], sante: 100, moral: 70, salaire: m.salaire, portrait: m.portrait, salle: null };
 }
 function creerItem(id, extra) {
   const d = DB.items[id];
@@ -87,8 +89,14 @@ function creerItem(id, extra) {
 
 function sauver() { try { localStorage.setItem(CLE_SAUVEGARDE, JSON.stringify(S)); } catch (e) { /* stockage indisponible */ } }
 function charger() {
-  try { const t = localStorage.getItem(CLE_SAUVEGARDE); if (t) { const s = JSON.parse(t); if (s && s.version === 1) { S = s; return true; } } } catch (e) {}
+  try { const t = localStorage.getItem(CLE_SAUVEGARDE); if (t) { const s = JSON.parse(t); if (s && s.version === 1) { S = s; migrer(); return true; } } } catch (e) {}
   return false;
+}
+function migrer() {
+  // Sauvegardes d'avant la 0.4.0 : une seule cale, marins sans salle, navire sans nom
+  if (!S.navire.nom) S.navire.nom = navire().nomParDefaut;
+  S.cale.forEach((it) => { if (!it.cale || !salleDef(it.cale) || !salleDef(it.cale).cale) it.cale = calePrincipale(); });
+  verifierPlacement();
 }
 function journal(t) { S.journal.unshift({ j: jour(), t }); S.journal = S.journal.slice(0, 60); }
 
@@ -102,24 +110,38 @@ const heure = () => S.temps - Math.floor(S.temps);
 const estNuit = () => heure() >= C.temps.debutNuit || heure() < C.temps.finNuit;
 const tousItems = () => S.cale.concat(S.quai);
 
-/* ---------------- Grille de cale ---------------- */
+/* ---------------- Salles et cales ---------------- */
+function sallesNavire() { return navire().salles; }
+function salleDef(id) { return navire().salles.find((s) => s.id === id); }
+function typeSalle(s) { return DB.sallesTypes[s.type]; }
+function nomSalle(s) { return s.nom || (s.cale ? DB.typesCale[s.cale.type].nom : typeSalle(s).nom); }
+function cales() { return navire().salles.filter((s) => s.cale); }
+function calePrincipale() { const c = cales(); const p = c.find((s) => s.id === "cale"); return (p || c[0]).id; }
+function caleDef(id) {
+  const s = salleDef(id) || salleDef(calePrincipale());
+  return Object.assign({}, DB.typesCale[s.cale.type], s.cale, { id: s.id, type: s.cale.type, nom: nomSalle(s), salle: s });
+}
+function itemsDe(caleId) { return S.cale.filter((it) => it.cale === caleId); }
+function caleDe(it) { return caleDef(it.cale); }
+
+/* ---------------- Grille d'une cale ---------------- */
 function dims(it) { const d = DB.items[it.id]; return it.rot ? { w: d.hauteur, h: d.largeur } : { w: d.largeur, h: d.hauteur }; }
 function casesDe(it, x, y, rot) {
   const d = DB.items[it.id]; const w = rot ? d.hauteur : d.largeur; const h = rot ? d.largeur : d.hauteur;
   const r = []; for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) r.push([x + i, y + j]); return r;
 }
-function occupation(ignorer) {
-  const n = navire(); const g = Array.from({ length: n.rangees }, () => Array(n.colonnes).fill(null));
-  S.cale.forEach((it) => { if (it.uid === ignorer) return; casesDe(it, it.x, it.y, it.rot).forEach(([x, y]) => { if (g[y] && x < n.colonnes) g[y][x] = it.uid; }); });
+function occupation(caleId, ignorer) {
+  const k = caleDef(caleId); const g = Array.from({ length: k.rangees }, () => Array(k.colonnes).fill(null));
+  itemsDe(k.id).forEach((it) => { if (it.uid === ignorer) return; casesDe(it, it.x, it.y, it.rot).forEach(([x, y]) => { if (g[y] && x < k.colonnes) g[y][x] = it.uid; }); });
   return g;
 }
-/* Gravité : un item doit reposer sur le plancher ou sur d'autres items.
+/* Gravité : un item doit reposer sur le plancher de sa cale ou sur d'autres items.
    Avec cale.appuiCentre, son centre doit en plus se trouver au-dessus de ses appuis.
    Les items "fixe" (planches) sont cloués à la coque : ils n'ont pas besoin d'appui et ne tombent jamais. */
-function appuiInfo(it, x, y, rot, g) {
-  const d = DB.items[it.id]; const n = navire(); const w = rot ? d.hauteur : d.largeur; const h = rot ? d.largeur : d.hauteur;
+function appuiInfo(it, caleId, x, y, rot, g) {
+  const d = DB.items[it.id]; const k = caleDef(caleId); const w = rot ? d.hauteur : d.largeur; const h = rot ? d.largeur : d.hauteur;
   const bas = y + h;
-  if (bas >= n.rangees) return { contact: true, stable: true };
+  if (bas >= k.rangees) return { contact: true, stable: true };
   if (d.fixe) return { contact: false, stable: true };
   const appuis = []; for (let i = 0; i < w; i++) if (g[bas] && g[bas][x + i]) appuis.push(x + i);
   if (!appuis.length) return { contact: false, stable: false };
@@ -127,22 +149,24 @@ function appuiInfo(it, x, y, rot, g) {
   const centre = x + w / 2;
   return { contact: true, stable: centre >= Math.min(...appuis) && centre <= Math.max(...appuis) + 1 };
 }
-function raisonPlacement(it, x, y, rot, g) {
-  const n = navire(); g = g || occupation(it.uid);
-  for (const [cx, cy] of casesDe(it, x, y, rot)) { if (cx < 0 || cy < 0 || cx >= n.colonnes || cy >= n.rangees) return "hors"; if (g[cy][cx]) return "occupe"; }
-  return appuiInfo(it, x, y, rot, g).stable ? null : "appui";
+function raisonPlacement(it, caleId, x, y, rot, g) {
+  const k = caleDef(caleId);
+  if (k.accepte && !k.accepte.includes(it.id)) return "type";
+  g = g || occupation(k.id, it.uid);
+  for (const [cx, cy] of casesDe(it, x, y, rot)) { if (cx < 0 || cy < 0 || cx >= k.colonnes || cy >= k.rangees) return "hors"; if (g[cy][cx]) return "occupe"; }
+  return appuiInfo(it, k.id, x, y, rot, g).stable ? null : "appui";
 }
-function peutPlacer(it, x, y, rot, g) { return raisonPlacement(it, x, y, rot, g) === null; }
+function peutPlacer(it, caleId, x, y, rot, g) { return raisonPlacement(it, caleId, x, y, rot, g) === null; }
 function appliquerGravite(sansDegats) {
-  const chutes = []; let bouge = true; let garde = 0; const n = navire();
+  const chutes = []; let bouge = true; let garde = 0;
   while (bouge && garde++ < 60) {
     bouge = false;
     const tri = [...S.cale].sort((a, b) => (b.y + dims(b).h) - (a.y + dims(a).h)); // du bas vers le haut
     for (const it of tri) {
       if (DB.items[it.id].fixe) continue;
-      const g = occupation(it.uid); let y = it.y;
-      while (!appuiInfo(it, it.x, y, it.rot, g).contact && casesDe(it, it.x, y + 1, it.rot).every(([cx, cy]) => cy < n.rangees && !g[cy][cx])) y++;
-      if (y !== it.y) { const c = chutes.find((k) => k[0] === it); if (c) c[1] += y - it.y; else chutes.push([it, y - it.y]); it.y = y; bouge = true; }
+      const k = caleDe(it); const g = occupation(k.id, it.uid); let y = it.y;
+      while (!appuiInfo(it, k.id, it.x, y, it.rot, g).contact && casesDe(it, it.x, y + 1, it.rot).every(([cx, cy]) => cy < k.rangees && !g[cy][cx])) y++;
+      if (y !== it.y) { const c = chutes.find((q) => q[0] === it); if (c) c[1] += y - it.y; else chutes.push([it, y - it.y]); it.y = y; bouge = true; }
     }
   }
   if (!sansDegats && chutes.length) {
@@ -152,52 +176,157 @@ function appliquerGravite(sansDegats) {
   }
   return chutes;
 }
-function placerAuto(it) {
-  const n = navire(); const d = DB.items[it.id]; const g = occupation(it.uid);
-  // Les items qui craignent l'eau cherchent d'abord en haut, les autres d'abord en bas (stabilité).
-  const rangees = [...Array(n.rangees).keys()]; if (!d.craintEau) rangees.reverse();
-  for (const rot of [false, true]) for (const y of rangees) for (let x = 0; x < n.colonnes; x++) {
-    if (peutPlacer(it, x, y, rot, g)) { it.x = x; it.y = y; it.rot = rot; S.quai = S.quai.filter((q) => q.uid !== it.uid); if (!S.cale.includes(it)) S.cale.push(it); return true; }
+function estContrebandeQuelquePart(itemId) { return C.iles.some((i) => i.interdits.includes(itemId)); }
+function ordreCales(it) {
+  const d = DB.items[it.id];
+  return cales().map((s) => caleDef(s.id)).filter((k) => !k.accepte || k.accepte.includes(it.id)).map((k) => {
+    let sc = (k.colonnes * k.rangees) / 100;
+    if (d.craintEau && !k.fondHumide) sc += 3;
+    if (d.perissable && k.toutVentile) sc += 3;
+    if (k.accepte) sc += 4;
+    if (k.discretion) sc += estContrebandeQuelquePart(d.id) ? 4 : -3;
+    return [k, sc];
+  }).sort((a, b) => b[1] - a[1]).map((x) => x[0]);
+}
+function placerDans(it, k) {
+  const d = DB.items[it.id]; const g = occupation(k.id, it.uid);
+  // Ce qui craint l'eau cherche d'abord en haut, le reste d'abord en bas (stabilité).
+  const rangees = [...Array(k.rangees).keys()]; if (!d.craintEau) rangees.reverse();
+  const centre = (k.colonnes - dims(it).w) / 2; // on remplit depuis le centre pour garder le navire équilibré
+  const colonnes = [...Array(k.colonnes).keys()].sort((a, b) => Math.abs(a - centre) - Math.abs(b - centre));
+  for (const rot of [false, true]) for (const y of rangees) for (const x of colonnes) {
+    if (peutPlacer(it, k.id, x, y, rot, g)) { it.cale = k.id; it.x = x; it.y = y; it.rot = rot; S.quai = S.quai.filter((q) => q.uid !== it.uid); if (!S.cale.includes(it)) S.cale.push(it); return true; }
   }
+  return false;
+}
+function placerAuto(it, caleId) {
+  const ancienne = S.cale.includes(it) ? { cale: it.cale, x: it.x, y: it.y, rot: it.rot } : null;
+  if (ancienne) S.cale = S.cale.filter((c) => c !== it);
+  const liste = caleId ? [caleDef(caleId)] : ordreCales(it);
+  for (const k of liste) if (placerDans(it, k)) { if (ancienne) appliquerGravite(); return true; }
+  if (ancienne) { Object.assign(it, ancienne); S.cale.push(it); }
   return false;
 }
 function versQuai(it) { const etaitEnCale = S.cale.includes(it); S.cale = S.cale.filter((c) => c.uid !== it.uid); it.x = -1; it.y = -1; if (!S.quai.includes(it)) S.quai.push(it); if (etaitEnCale) appliquerGravite(); }
 function retirer(it) { const etaitEnCale = S.cale.includes(it); S.cale = S.cale.filter((c) => c.uid !== it.uid); S.quai = S.quai.filter((c) => c.uid !== it.uid); if (selection === it.uid) selection = null; if (etaitEnCale) appliquerGravite(); }
 function dansCachette(it) {
+  const k = caleDe(it); if (k.discretion) return true;
   if (!aAmelio("cachette")) return false;
-  const cs = navire().cachette.map((c) => c.join(","));
+  const cs = (k.cachette || []).map((c) => c.join(","));
   return casesDe(it, it.x, it.y, it.rot).every((c) => cs.includes(c.join(",")));
 }
-function auFond(it) { const { h } = dims(it); return it.y + h - 1 >= navire().rangees - 1; }
-function ventile(it) { const { w } = dims(it); for (let i = 0; i < w; i++) if (navire().colonnesVentilees.includes(it.x + i)) return true; return false; }
+function discretionItem(it) { const k = caleDe(it); if (k.discretion) return k.discretion; return dansCachette(it) ? C.contrebande.cachetteDiscretion : C.contrebande.discretionNormale; }
+function auFond(it) { const k = caleDe(it); if (!k.fondHumide) return false; const { h } = dims(it); return it.y + h - 1 >= k.rangees - 1; }
+function ventile(it) { const k = caleDe(it); if (k.toutVentile) return true; const { w } = dims(it); for (let i = 0; i < w; i++) if ((k.colonnesVentilees || []).includes(it.x + i)) return true; return false; }
+function facteurVentilation(it) { const k = caleDe(it); return k.ventilation || C.cale.ventilation; }
 function poidsAuDessus(it) {
-  const { w } = dims(it); const vus = new Set(); let p = 0; const g = occupation(it.uid);
+  const { w } = dims(it); const vus = new Set(); let p = 0; const g = occupation(it.cale, it.uid);
   for (let i = 0; i < w; i++) for (let y = it.y - 1; y >= 0; y--) { const u = g[y][it.x + i]; if (u && !vus.has(u)) { vus.add(u); p += DB.items[S.cale.find((c) => c.uid === u).id].poids; } }
   return p;
 }
 
-/* ---------------- Statistiques ---------------- */
+/* ---------------- Statistiques du navire ---------------- */
 function charge() { return S.cale.reduce((s, it) => s + DB.items[it.id].poids, 0); }
+function chargeCale(caleId) { return itemsDe(caleId).reduce((s, it) => s + DB.items[it.id].poids, 0); }
 function ratioCharge() { return charge() / navire().chargeMax; }
-function stabilite() {
-  const n = navire(); let p = 0, m = 0;
-  S.cale.forEach((it) => { const w = DB.items[it.id].poids; const { h } = dims(it); p += w; m += w * (it.y + (h - 1) / 2); });
-  if (!p) return 1; return clamp(0.2 + 0.8 * (m / p) / Math.max(1, n.rangees - 1), 0, 1);
+function posGlobale(it) { // position de l'item dans la vue en coupe du navire
+  const k = caleDe(it); const s = k.salle; const d = dims(it);
+  return { x: s.x + (it.x + d.w / 2) / k.colonnes * s.l, y: s.y + (it.y + d.h / 2) / k.rangees * s.h };
 }
-function desequilibre() {
-  const n = navire(); let p = 0, m = 0;
-  S.cale.forEach((it) => { const w = DB.items[it.id].poids; const d = dims(it); p += w; m += w * (it.x + (d.w - 1) / 2); });
-  if (!p) return 0; const c = (n.colonnes - 1) / 2; return ((m / p) - c) / c; // -1 = tout à la proue, +1 = tout à la poupe
+function centreGravite() {
+  let p = 0, mx = 0, my = 0;
+  S.cale.forEach((it) => { const w = DB.items[it.id].poids; const g = posGlobale(it); p += w; mx += w * g.x; my += w * g.y; });
+  return p ? { x: mx / p, y: my / p } : null;
+}
+function stabilite() {
+  const cg = centreGravite(); if (!cg) return 1; const cp = navire().coupe;
+  const fond = Math.max(...cales().map((s) => s.y + s.h));
+  return clamp(0.2 + 0.8 * (cg.y - cp.pont) / Math.max(1, fond - cp.pont), 0, 1);
+}
+function desequilibre() { // −1 = tout à la poupe (gauche), +1 = tout à la proue (droite)
+  const cg = centreGravite(); if (!cg) return 0;
+  const xs = cales().flatMap((s) => [s.x, s.x + s.l]); const min = Math.min(...xs), max = Math.max(...xs);
+  return clamp((cg.x - (min + max) / 2) / ((max - min) / 2), -1, 1);
+}
+
+/* ---------------- Équipage et salles ---------------- */
+function formeMarin(m) { return 0.5 + 0.5 * Math.min(m.sante, m.moral) / 100; }
+function apportBrut(m, c) { // ce que le marin sait faire dans cette compétence, avant la salle
+  if (DB.roles[m.role].competence === c) return 1;
+  if (m.secondaire && DB.roles[m.secondaire].competence === c) return C.roles.efficaciteSecondaire;
+  return 0;
+}
+function occupants(salleId) { return S.equipage.filter((m) => m.salle === salleId); }
+function competenceSalle(c, salleId) {
+  const s = salleDef(salleId); if (!s) return 0; const f = (typeSalle(s).competences || {})[c] || 0; if (!f) return 0;
+  const vals = occupants(salleId).map((m) => apportBrut(m, c) * formeMarin(m) * f).filter((v) => v > 0).sort((a, b) => b - a);
+  const rd = C.salles.rendements;
+  return vals.reduce((s, v, i) => s + v * (rd[i] !== undefined ? rd[i] : rd[rd.length - 1]), 0);
 }
 function competence(c) {
-  let v = 0;
-  S.equipage.forEach((m) => {
-    const forme = 0.5 + 0.5 * Math.min(m.sante, m.moral) / 100;
-    if (DB.roles[m.role].competence === c) v += forme;
-    else if (m.secondaire && DB.roles[m.secondaire].competence === c) v += C.roles.efficaciteSecondaire * forme;
-  });
+  let v;
+  if (C.salles.competencesGlobales.includes(c)) v = S.equipage.reduce((s, m) => s + apportBrut(m, c) * formeMarin(m), 0);
+  else v = sallesNavire().reduce((s, sa) => s + competenceSalle(c, sa.id), 0);
   if (c === "defense") v += navire().canons * 0.12;
   return v;
+}
+function apportDans(m, salleId) { // valeur du marin dans une salle (pour le placement conseillé)
+  const s = salleDef(salleId); if (!s) return 0; const comp = typeSalle(s).competences || {};
+  return Object.keys(comp).reduce((t, c) => t + apportBrut(m, c) * comp[c], 0);
+}
+function statutMarin(m) {
+  const s = salleDef(m.salle); if (!s) return "inutile"; const t = typeSalle(s);
+  if (t.action === "repos") return "repos";
+  const v = apportDans(m, m.salle);
+  if (t.action === "soin" && !(apportBrut(m, "medecine") > 0)) return "patient";
+  if (v >= 1) return "principal"; if (v > 0) return "secondaire"; return "inutile";
+}
+function placesLibres(salleId) { const s = salleDef(salleId); return s ? s.places - occupants(salleId).length : 0; }
+function placerMarin(m, exclure) {
+  // la salle libre où le marin est le plus utile, en tenant compte du rendement décroissant
+  let best = null, bv = -1;
+  sallesNavire().forEach((s) => {
+    if (s.places - occupants(s.id).filter((o) => o !== m).length <= 0 || (exclure && exclure.includes(s.id))) return;
+    const rang = occupants(s.id).filter((o) => o !== m && apportDans(o, s.id) > 0).length; const rd = C.salles.rendements;
+    let v = apportDans(m, s.id) * (rd[rang] !== undefined ? rd[rang] : rd[rd.length - 1]);
+    if (typeSalle(s).action === "soin" && m.sante < 50 && !(apportBrut(m, "medecine") > 0)) v += 0.6;
+    if (s.type === "pont") v += 0.01; // à valeur égale, sur le pont
+    if (v > bv) { bv = v; best = s; }
+  });
+  m.salle = best ? best.id : sallesNavire()[0].id;
+}
+function verifierPlacement() {
+  S.equipage.forEach((m) => { if (!salleDef(m.salle)) m.salle = null; });
+  sallesNavire().forEach((s) => { const occ = occupants(s.id); for (let k = s.places; k < occ.length; k++) occ[k].salle = null; });
+  S.equipage.filter((m) => !m.salle).forEach((m) => placerMarin(m));
+}
+function placementConseille() {
+  S.equipage.forEach((m) => { m.salle = null; });
+  const ordre = [...S.equipage].sort((a, b) => Math.max(...sallesNavire().map((s) => apportDans(b, s.id))) - Math.max(...sallesNavire().map((s) => apportDans(a, s.id))));
+  ordre.forEach((m) => placerMarin(m));
+}
+function posteTempete() {
+  placementConseille(); if (!salleDef("pont")) return;
+  const garder = (m) => { const s = salleDef(m.salle); return m.salle === "pont" || (s.cale && apportBrut(m, "arrimage") >= 1); };
+  S.equipage.filter((m) => !garder(m)).sort((a, b) => apportBrut(b, "navigation") - apportBrut(a, "navigation")).forEach((m) => { if (placesLibres("pont") > 0) m.salle = "pont"; });
+}
+function posteRepos() {
+  const soin = sallesNavire().find((s) => typeSalle(s).action === "soin"); const dodo = sallesNavire().find((s) => typeSalle(s).action === "repos");
+  if (!soin && !dodo) { toast("Ce navire n'a ni infirmerie ni dortoir."); return false; }
+  placementConseille();
+  const blesses = S.equipage.filter((m) => m.sante < 70 && !(apportBrut(m, "medecine") > 0)).sort((a, b) => a.sante - b.sante);
+  blesses.forEach((m) => { if (soin && placesLibres(soin.id) > 0) m.salle = soin.id; });
+  if (dodo) S.equipage.filter((m) => m.salle !== "pont" && statutMarin(m) === "inutile").forEach((m) => { if (placesLibres(dodo.id) > 0) m.salle = dodo.id; });
+  return true;
+}
+function deplacerMarin(m, salleId) {
+  const s = salleDef(salleId); if (!s || m.salle === salleId) return false;
+  if (s.places <= 0) { toast("Pas de place pour un marin ici."); return false; }
+  if (placesLibres(salleId) <= 0) { // échange avec l'occupant le moins utile
+    const autre = occupants(salleId).sort((a, b) => apportDans(a, salleId) - apportDans(b, salleId))[0];
+    autre.salle = m.salle;
+  }
+  m.salle = salleId; return true;
 }
 function vitesseNavire() {
   const n = navire(); const r = ratioCharge(); const cc = C.cale; let f = 1;
@@ -388,6 +517,9 @@ function finDeJournee(enMer) {
       if (S.joursSansFrais > eq.scorbutApresJours) m.sante += eq.scorbutSante * (m.traits.includes("robuste") ? DB.traits.robuste.maladie : 1);
       m.moral += eq.moralParJourEnMer;
       m.sante += eq.soinParJour * medecine / Math.max(1, S.equipage.length);
+      const st = statutMarin(m);
+      if (st === "patient") m.sante += C.salles.soinPatientParJour * (1 + competenceSalle("medecine", m.salle));
+      if (st === "repos") { m.sante += C.salles.reposSanteParJour; m.moral += C.salles.reposMoralParJour; }
       m.traits.forEach((t) => { const tr = DB.traits[t]; if (tr.moralJourSansRhum && !rhum) m.moral += tr.moralJourSansRhum; });
     });
     if (besoin > 0) journal("<b>Faim à bord !</b> Il n'y a plus de vivres.");
@@ -398,7 +530,7 @@ function finDeJournee(enMer) {
   for (const it of [...S.cale]) {
     const d = DB.items[it.id];
     if (d.perissable > 0) {
-      let perte = 100 / d.perissable; if (climat === "tropical") perte *= C.cale.climatTropical; if (ventile(it)) perte *= C.cale.ventilation;
+      let perte = 100 / d.perissable; if (climat === "tropical") perte *= C.cale.climatTropical; if (ventile(it)) perte *= facteurVentilation(it);
       it.etat -= perte;
       if (it.etat <= 0) { journal(esc(d.nom) + " a pourri et a été jeté."); retirer(it); continue; }
     }
@@ -441,7 +573,7 @@ function tirerEvenement() {
 function chanceTest(t) { return t ? clamp(t.base + t.parPoint * competence(t.competence), 0.05, 0.95) : 1; }
 async function lancerEvenement(e) {
   const choixIdx = await modale({ titre: e.titre, icone: e.icone || "❗", theme: e.theme || "mer", html: "<p>" + esc(e.texte) + "</p>",
-    boutons: e.choix.map((c) => ({ t: c.texte, chance: c.test ? chanceTest(c.test) : null, sous: c.test ? "Réussite " + pct(chanceTest(c.test)) + " · " + nomCompetence(c.test.competence) : "Sans risque d'échec" })) });
+    boutons: e.choix.map((c) => ({ t: c.texte, chance: c.test ? chanceTest(c.test) : null, sous: c.test ? "Réussite " + pct(chanceTest(c.test)) + " · " + nomCompetence(c.test.competence) + ouCompetence(c.test.competence) : "Sans risque d'échec" })) });
   const c = e.choix[choixIdx]; const ok = Math.random() < chanceTest(c.test);
   const eff = ok ? c.succes : (c.echec || c.succes);
   const lignes = await appliquerEffets(eff);
@@ -450,6 +582,11 @@ async function lancerEvenement(e) {
   verifierEquipage();
   if (S.navire.coque <= 0) { await naufrage(); return; }
   sauver(); rendreTout();
+}
+function ouCompetence(c) { // salles où la compétence compte à 100 %
+  if (C.salles.competencesGlobales.includes(c)) return "";
+  const s = sallesNavire().filter((x) => ((typeSalle(x).competences || {})[c] || 0) >= 1).map(nomSalle);
+  return s.length ? " (" + [...new Set(s)].join(", ") + ")" : " (aucune salle adaptée)";
 }
 function nomCompetence(c) { const r = C.roles.liste.find((x) => x.competence === c); return r ? r.nom : c; }
 async function appliquerEffets(e) {
@@ -478,13 +615,13 @@ async function appliquerEffets(e) {
   if (e.inspection) await inspection(e.inspection, null, true);
   return L;
 }
-function reductionArrimage() { return 1 - Math.min(0.8, C.cale.reductionArrimage * competence("arrimage")); }
+function reductionArrimage(caleId) { return 1 - Math.min(0.8, C.cale.reductionArrimage * competenceSalle("arrimage", caleId)); }
 function degatsChoc(I) {
   const stab = stabilite(); let n = 0, total = 0;
   S.cale.forEach((it) => {
     if (!DB.items[it.id].fragile) return;
     const p = poidsAuDessus(it);
-    const d = I * alea(0.6, 1.2) * (1 + Math.max(0, p - C.cale.poidsFragile) / C.cale.poidsFragile) * (1.5 - stab) * reductionArrimage();
+    const d = I * alea(0.6, 1.2) * (1 + Math.max(0, p - C.cale.poidsFragile) / C.cale.poidsFragile) * (1.5 - stab) * reductionArrimage(it.cale);
     it.etat = clamp(it.etat - d, 0, 100); n++; total += d;
   });
   return n ? ["Items fragiles secoués : " + n + " (−" + arr(total / n) + " % d'état en moyenne)"] : [];
@@ -493,7 +630,7 @@ function degatsEau(I) {
   let n = 0, total = 0; const div = aAmelio("baches") ? DB.amelios.baches.diviseurEau : 1;
   S.cale.forEach((it) => {
     if (!DB.items[it.id].craintEau) return;
-    const d = I * (auFond(it) ? alea(0.8, 1.3) : alea(0.1, 0.3)) / div * reductionArrimage();
+    const d = I * (auFond(it) ? alea(0.8, 1.3) : alea(0.1, 0.3)) * (caleDe(it).fondHumide ? 1 : 0.2) / div * reductionArrimage(it.cale);
     it.etat = clamp(it.etat - d, 0, 100); n++; total += d;
   });
   return n ? ["Items mouillés : " + n + " (−" + arr(total / n) + " % d'état en moyenne)"] : [];
@@ -519,7 +656,7 @@ async function inspection(fid, ileId, certaine) {
     S.mefiance[fid] += 10;
   }
   const bonusTrait = S.equipage.reduce((s, m) => s + m.traits.reduce((a, t) => a + (DB.traits[t].cachette || 0), 0), 0);
-  const trouves = suspects.filter((it) => Math.random() > clamp((dansCachette(it) ? C.contrebande.cachetteDiscretion : C.contrebande.discretionNormale) + bonusTrait, 0, 0.98));
+  const trouves = suspects.filter((it) => Math.random() > clamp(discretionItem(it) + bonusTrait, 0, 0.98));
   if (!trouves.length) { await modale({ titre: "Ouf !", icone: "😮‍💨", theme: "succes", html: "<p>Les inspecteurs repartent bredouilles.</p>", boutons: [{ t: "Continuer", primaire: true }] }); return; }
   const valeur = trouves.reduce((s, it) => s + DB.items[it.id].prix, 0);
   const amende = Math.min(S.or, arr(valeur * C.contrebande.amendeParValeur * f.severite));
@@ -563,7 +700,8 @@ async function naufrage() {
   S.equipage = [survivant];
   if (ancienRole !== "capitaine") { survivant.secondaire = ancienRole; survivant.role = "capitaine"; }
   survivant.sante = Math.max(30, survivant.sante); survivant.moral = 40;
-  S.navire = { type: nf.navire, coque: DB.navires[nf.navire].coqueMax, amelios: [] };
+  S.navire = { type: nf.navire, coque: DB.navires[nf.navire].coqueMax, amelios: [], nom: DB.navires[nf.navire].nomParDefaut };
+  placementConseille();
   S.cale = []; S.quai = []; S.or = arr(S.or * nf.orConserve);
   S.contrats = []; S.voyage = null; S.ile = refuge; S.pos = { x: DB.iles[refuge].x, y: DB.iles[refuge].y };
   Object.keys(S.reputation.iles).forEach((k) => { S.reputation.iles[k] *= nf.reputationConservee; });
@@ -590,7 +728,7 @@ function recruesDispo() { return C.marins.filter((m) => m.prixRecrutement && !S.
 function recruter(id) {
   const m = DB.marins[id]; if (S.or < m.prixRecrutement) return toast("Pas assez d'or.");
   if (S.equipage.length >= navire().equipageMax) return toast("Plus de place à bord.");
-  S.or -= m.prixRecrutement; S.equipage.push(creerMarin(id)); S.marinsPasses.push(id); S.cohesion = clamp(S.cohesion + C.equipage.cohesionRecrue, 0, 100);
+  S.or -= m.prixRecrutement; const recrue = creerMarin(id); S.equipage.push(recrue); placerMarin(recrue); S.marinsPasses.push(id); S.cohesion = clamp(S.cohesion + C.equipage.cohesionRecrue, 0, 100);
   journal(esc(m.nom) + " rejoint l'équipage."); rendreTout(); sauver();
 }
 function acheterAmelio(id) {
@@ -602,10 +740,11 @@ function acheterAmelio(id) {
 function reprise() { return arr(navire().prix * 0.5); }
 async function acheterNavire(id) {
   const n = DB.navires[id]; const cout = n.prix - reprise(); if (S.or < cout) return toast("Pas assez d'or.");
-  const r = await modale({ titre: "Changer de navire", icone: "⛵", html: "<p>Acheter une <b>" + esc(n.nom) + "</b> pour " + cout + " or (reprise de votre " + esc(navire().nom) + " déduite) ?</p><p class='muted'>Les améliorations sont perdues. La cargaison est déposée sur le quai : rangez-la dans la nouvelle cale.</p>", boutons: [{ t: "Acheter", primaire: true }, { t: "Annuler" }] });
+  const r = await modale({ titre: "Changer de navire", icone: "⛵", html: "<p>Acheter une <b>" + esc(n.nom) + "</b> pour " + cout + " or (reprise de votre " + esc(navire().nom) + " déduite) ?</p><p class='muted'>Les améliorations sont perdues. La cargaison est déposée sur le quai : rangez-la dans les nouvelles cales. L'équipage est réparti dans les salles du nouveau navire.</p>", boutons: [{ t: "Acheter", primaire: true }, { t: "Annuler" }] });
   if (r !== 0) return;
-  S.or -= cout; S.cale.forEach((it) => { it.x = -1; it.y = -1; S.quai.push(it); }); S.cale = [];
-  S.navire = { type: id, coque: n.coqueMax, amelios: [] };
+  S.or -= cout; S.cale.forEach((it) => { it.x = -1; it.y = -1; it.cale = null; S.quai.push(it); }); S.cale = [];
+  S.navire = { type: id, coque: n.coqueMax, amelios: [], nom: n.nomParDefaut };
+  placementConseille(); salleSel = calePrincipale();
   journal("Nouveau navire : <b>" + esc(n.nom) + "</b> !"); rendreTout(); sauver(); afficherPanneau("p-cale");
 }
 function coffre(sens, montant) {
@@ -795,12 +934,17 @@ function vueMarche(i) {
   }
   return h;
 }
+function descNavire(n) {
+  const cs = n.salles.filter((s) => s.cale).map((s) => miniGrille(s.cale) + " " + (s.nom || DB.typesCale[s.cale.type].nom) + " " + s.cale.colonnes + "×" + s.cale.rangees).join("<br>");
+  const autres = n.salles.filter((s) => !s.cale).map((s) => DB.sallesTypes[s.type].nom).join(", ");
+  return cs + "<br>Salles : " + autres;
+}
 function miniGrille(n) { let s = "<span class='mini-grille' style='grid-template-columns:repeat(" + n.colonnes + ",7px)'>"; for (let y = 0; y < n.rangees; y++) for (let x = 0; x < n.colonnes; x++) s += "<i class='" + (y === n.rangees - 1 ? "h" : "") + "'></i>"; return s + "</span>"; }
 function vueChantier(i) {
   let h = "";
   if (i.services.includes("reparation")) h += "<div class='bloc'><div class='ligne'><div class='g'><div class='nom'>🛠️ Coque " + arr(S.navire.coque) + " / " + coqueMax() + "</div>" + jauge(S.navire.coque, coqueMax()) + "</div><button class='or' data-a='reparer' " + (S.navire.coque >= coqueMax() || !S.or ? "disabled" : "") + ">Réparer · " + coutReparation() + " 💰</button></div></div>";
   if (i.ameliorations.length) { h += "<h3>⚙️ Améliorations <span class='muted' style='font-family:Inter'>" + S.navire.amelios.length + "/" + navire().emplacements + "</span></h3>"; i.ameliorations.forEach((id) => { const a = DB.amelios[id]; const eu = S.navire.amelios.includes(id); h += articleHtml({ icone: a.effet === "cachette" ? "🗝️" : a.effet === "baches" ? "🧥" : "🪵", nom: a.nom }, eu ? "<span class='tag vert'>installée</span>" : "<button class='prix or' data-amelio='" + id + "' " + (S.or < a.prix ? "disabled" : "") + ">" + a.prix + "<small>💰 installer</small></button>", esc(a.description), "#e9d6a6"); }); }
-  if (i.services.includes("chantier")) { h += "<h3>⛵ Navires</h3>"; C.navires.filter((n) => n.prix > 0 && n.id !== S.navire.type).forEach((n) => { h += articleHtml({ icone: "⛵", nom: n.nom }, "<button class='prix or' data-navire='" + n.id + "'>" + Math.max(0, n.prix - reprise()) + "<small>💰 reprise déduite</small></button>", miniGrille(n) + " cale " + n.colonnes + "×" + n.rangees + "<br>charge " + n.chargeMax + " · équipage " + n.equipageMax + " · " + n.canons + " canons · vitesse " + n.vitesse, "#cfe0ee"); }); }
+  if (i.services.includes("chantier")) { h += "<h3>⛵ Navires</h3>"; C.navires.filter((n) => n.prix > 0 && n.id !== S.navire.type).forEach((n) => { h += articleHtml({ icone: "⛵", nom: n.nom }, "<button class='prix or' data-navire='" + n.id + "'>" + Math.max(0, n.prix - reprise()) + "<small>💰 reprise déduite</small></button>", descNavire(n) + "<br>charge " + n.chargeMax + " · équipage " + n.equipageMax + " · " + n.canons + " canons · vitesse " + n.vitesse, "#cfe0ee"); }); }
   return h || "<div class='bloc muted'>Aucun service ici.</div>";
 }
 function vueTaverne(i) {
@@ -885,34 +1029,132 @@ function majVoyage() {
   document.querySelectorAll("#p-port .vitesses button").forEach((b) => b.classList.toggle("actif", b.dataset.v === "p" ? enPause : !enPause && +b.dataset.v === vitesseIdx));
 }
 
-/* ---------- Panneau Cale ---------- */
-function tailleCase() {
-  const n = navire(); const panneau = $("#p-cale"); const larg = (panneau.clientWidth || window.innerWidth) - 24 - 56;
-  return clamp(Math.floor(larg / n.colonnes), 30, 58);
+/* ---------- Panneau Bateau ---------- */
+let salleSel = null;      // salle affichée en détail
+let coupeGrande = false;  // vue en coupe agrandie (téléphone)
+const ABR = { navigation: "Nav", vigie: "Vig", defense: "Déf", cuisine: "Cuis", medecine: "Méd", arrimage: "Arr", charpente: "Charp", commerce: "Com" };
+const STATUTS = { principal: "rôle principal", secondaire: "rôle secondaire", patient: "patient", repos: "au repos", inutile: "sans compétence utile ici" };
+function salleSelectionnee() { if (!salleSel || !salleDef(salleSel)) salleSel = calePrincipale(); return salleDef(salleSel); }
+function fmt2(v) { return v.toFixed(v >= 10 ? 0 : 1).replace(".", ","); }
+
+function hautCoupe(n) { // sans vigie, on coupe le haut du ciel pour gagner de la place
+  const yMin = Math.min(...n.salles.map((s) => s.y));
+  return yMin < 60 ? 0 : Math.max(0, yMin - 14);
+}
+function silhouetteSvg(n) {
+  const cp = n.coupe; const H = cp.hauteur; const coul = n.couleurCoque; const y0 = hautCoupe(n);
+  const eau = clamp(cp.quille - 26 - ratioCharge() * 16, cp.pont + 30, cp.quille - 8);
+  const formes = {
+    barque: { coque: "M 60 100 L 300 100 Q 318 98 326 86 Q 318 150 278 190 Q 226 210 184 210 Q 134 208 104 192 Q 66 156 60 100 Z",
+      greement: "<rect x='198' y='16' width='4' height='86' fill='#4a321c'/><path d='M 203 20 L 262 90 L 204 92 Z' fill='#f6ecd2' stroke='#b9a57a'/><path d='M 201 16 L 218 19 L 201 23 Z' fill='#3f8a4f'/><line x1='110' y1='104' x2='84' y2='150' stroke='#6b4b2a' stroke-width='3' stroke-linecap='round'/>",
+      bande: "M 0 110 Q 180 116 366 98", lignes: [136, 166], fenetres: "" },
+    cotre: { coque: "M 34 116 L 56 116 L 62 140 L 294 140 Q 312 132 324 116 L 332 118 Q 326 190 292 248 Q 244 292 178 294 Q 108 292 80 254 Q 50 196 34 116 Z",
+      greement: "<line x1='320' y1='120' x2='358' y2='98' stroke='#3b2a1a' stroke-width='4' stroke-linecap='round'/><rect x='174' y='8' width='6' height='134' fill='#4a321c'/><path d='M 181 30 L 262 44 L 270 132 L 181 132 Z' fill='#f6ecd2' stroke='#b9a57a'/><path d='M 180 22 L 354 100 L 186 128 Z' fill='#faf2dc' stroke='#b9a57a'/><path d='M 180 8 L 202 11 L 196 15 L 202 19 L 180 19 Z' fill='#3f8a4f'/>",
+      bande: "M 0 148 Q 180 156 366 128", lignes: [176, 206, 236, 266], fenetres: "<rect x='39' y='122' width='7' height='9' rx='1' fill='#e7c977'/>" },
+    goelette: { coque: "M 8 112 L 34 112 L 42 140 L 318 140 Q 338 132 350 114 L 358 116 Q 352 200 316 268 Q 262 324 170 326 Q 84 324 50 278 Q 20 210 8 112 Z",
+      greement: "<line x1='346' y1='118' x2='366' y2='92' stroke='#3b2a1a' stroke-width='4' stroke-linecap='round'/><rect x='118' y='6' width='5' height='136' fill='#4a321c'/><rect x='244' y='28' width='5' height='114' fill='#4a321c'/><path d='M 125 58 L 200 66 L 206 132 L 125 132 Z' fill='#f6ecd2' stroke='#b9a57a'/><path d='M 251 44 L 312 54 L 318 132 L 251 132 Z' fill='#f1e5c6' stroke='#b9a57a'/><path d='M 252 34 L 364 96 L 258 126 Z' fill='#faf2dc' stroke='#b9a57a'/><path d='M 123 6 L 146 9 L 140 13 L 146 17 L 123 17 Z' fill='#3f8a4f'/><path d='M 249 28 L 266 32 L 249 36 Z' fill='#3f8a4f'/>",
+      bande: "M 0 148 Q 180 156 366 128", lignes: [176, 206, 236, 266, 296], fenetres: "<rect x='13' y='118' width='7' height='9' rx='1' fill='#e7c977'/><rect x='24' y='118' width='7' height='9' rx='1' fill='#e7c977'/>" }
+  };
+  const f = formes[n.silhouette] || formes.cotre; const idc = "coque-" + n.id;
+  let s = "<svg class='coupe-svg' viewBox='0 " + y0 + " 366 " + (H - y0) + "' preserveAspectRatio='none' aria-hidden='true'><defs><linearGradient id='bois-" + n.id + "' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#7a5132'/><stop offset='0.7' stop-color='#4a2d17'/><stop offset='1' stop-color='#2e1a0b'/></linearGradient><clipPath id='" + idc + "'><path d='" + f.coque + "'/></clipPath></defs>";
+  s += "<rect x='0' y='" + (eau - 6) + "' width='366' height='" + (H - eau + 6) + "' fill='#2b5469'/>" + f.greement;
+  s += "<path d='" + f.coque + "' fill='url(#bois-" + n.id + ")' stroke='#24150a' stroke-width='2'/>";
+  s += "<g clip-path='url(#" + idc + ")'><path d='" + f.bande + "' stroke='" + coul + "' stroke-width='9' fill='none'/>" + f.lignes.map((y) => "<path d='M 0 " + y + " Q 180 " + (y + 8) + " 366 " + (y - 24) + "' stroke='rgba(0,0,0,0.28)' stroke-width='1.5' fill='none'/>").join("") + "</g>" + f.fenetres;
+  s += "<text x='180' y='" + (cp.quille - 12) + "' text-anchor='middle' font-family='IM Fell English SC, Georgia, serif' font-size='12' fill='#e7c977'>" + esc(S.navire.nom || n.nomParDefaut) + "</text>";
+  s += "<path class='vague1' d='M 0 " + eau + " q 12 -6 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 V " + H + " H 0 Z' fill='#3e7590' opacity='0.72'/>";
+  return s + "</svg>";
+}
+function miniPortrait(m, t, deplacable) {
+  return "<span class='mp st-" + statutMarin(m) + "' " + (deplacable ? "data-marin='" + m.id + "' " : "") + "title='" + esc(m.nom + " — " + STATUTS[statutMarin(m)]) + "' style='width:" + t + "px;height:" + t + "px'>" + portraitSvg(m.portrait, t) + "</span>";
+}
+function resumeSalle(s) {
+  if (s.cale) { const k = caleDef(s.id); return chargeCale(s.id) + " kg · " + k.colonnes + "×" + k.rangees; }
+  const comp = typeSalle(s).competences || {};
+  const parts = Object.keys(comp).filter((c) => comp[c] >= 1).map((c) => ABR[c] + " " + fmt2(competenceSalle(c, s.id)));
+  if (typeSalle(s).action === "repos") return occupants(s.id).length + " au repos";
+  return parts.join(" · ");
+}
+function boiteSalle(s, H, y0) {
+  const t = typeSalle(s); const occ = occupants(s.id); const sel = salleSel === s.id;
+  const alerte = t.critique && !occ.length; const Hv = H - y0;
+  const st = "left:" + (s.x / 366 * 100) + "%;top:" + ((s.y - y0) / Hv * 100) + "%;width:" + (s.l / 366 * 100) + "%;height:" + (s.h / Hv * 100) + "%";
+  let gens = occ.map((m) => miniPortrait(m, 20, true)).join("");
+  for (let k = occ.length; k < s.places; k++) gens += "<span class='place-vide' aria-hidden='true'></span>";
+  const info = resumeSalle(s); const large = s.l >= 120;
+  return "<div class='salle" + (sel ? " sel" : "") + (alerte ? " alerte" : "") + (s.cale ? " est-cale" : "") + (s.cale && caleDef(s.id).fondHumide ? " humide" : "") + "' data-salle='" + s.id + "' style='" + st + "' role='button' tabindex='0' aria-label='" + esc(nomSalle(s) + (info ? ", " + info : "")) + "' title='" + esc(nomSalle(s) + (info ? " · " + info : "")) + "'>" +
+    "<span class='s-nom'>" + esc(nomSalle(s)) + (s.places ? " <small>" + occ.length + "/" + s.places + "</small>" : "") + (!s.cale && large && info ? " <small>· " + info + "</small>" : "") + "</span>" +
+    (gens ? "<span class='s-gens'>" + gens + "</span>" : "") + (s.cale ? "<span class='s-info'>" + info + "</span>" : "") + "</div>";
+}
+function tailleCase(k) {
+  const panneau = $("#p-cale"); const larg = (panneau.clientWidth || window.innerWidth) - 24 - 56;
+  return clamp(Math.floor(larg / k.colonnes), 26, 54);
 }
 function rendreCale() {
-  if (glisse) return;
-  const p = $("#p-cale"); const scroll = p.scrollTop; const n = navire(); const cs = tailleCase();
-  const rc = ratioCharge(); const st = stabilite(); const dq = desequilibre();
-  let h = "<h2>Cale — " + esc(n.nom) + "</h2>";
-  h += "<div class='puces'>" +
-    "<div class='puce'>⚖️ Charge<b style='color:" + (rc > 1 ? "var(--danger)" : rc > C.cale.seuilRalentissement ? "var(--alerte)" : "inherit") + "'>" + charge() + " / " + n.chargeMax + "</b><div class='jauge " + (rc > 1 ? "bas" : rc > C.cale.seuilRalentissement ? "moy" : "") + "'><i style='width:" + Math.min(100, rc * 100) + "%'></i></div></div>" +
-    "<div class='puce'>⚓ Stabilité<b>" + pct(st) + "</b>" + jauge(st * 100) + "</div>" +
-    "<div class='puce'>↔️ Équilibre<b>" + (Math.abs(dq) < 0.15 ? "Bon" : dq < 0 ? "Proue lourde" : "Poupe lourde") + "</b>" + jauge((1 - Math.abs(dq)) * 100) + "</div>" +
-    "<div class='puce'>💨 Vitesse<b>" + vitesseNavire().toFixed(1) + " / j</b></div>" +
-    "<div class='puce'>🍞 Vivres<b>" + rations() + " · " + (joursDeVivres() >= 99 ? "—" : joursDeVivres().toFixed(1) + " j") + "</b></div>" +
-    "<div class='puce'>▦ Volume<b>" + casesOccupees() + " / " + n.colonnes * n.rangees + "</b></div></div>";
-  h += "<div class='coque-wrap'><span class='lbl' style='left:4px;top:50%;transform:translateY(-50%) rotate(-90deg)'>PROUE</span><span class='lbl' style='right:4px;top:50%;transform:translateY(-50%) rotate(90deg)'>POUPE</span><span class='lbl' style='left:50%;top:7px;transform:translateX(-50%)'>PONT · SEC</span><span class='lbl' style='left:50%;bottom:8px;transform:translateX(-50%)'>FOND DE CALE · HUMIDE</span><div id='grille' style='width:" + n.colonnes * cs + "px;height:" + n.rangees * cs + "px'>";
-  const cache = aAmelio("cachette") ? n.cachette.map((c) => c.join(",")) : [];
-  for (let y = 0; y < n.rangees; y++) for (let x = 0; x < n.colonnes; x++) h += "<div class='case" + (y === n.rangees - 1 ? " humide" : "") + (n.colonnesVentilees.includes(x) ? " vent" : "") + (cache.includes(x + "," + y) ? " cache" : "") + "' style='left:" + x * cs + "px;top:" + y * cs + "px;width:" + cs + "px;height:" + cs + "px'></div>";
-  S.cale.forEach((it) => { h += itemHtml(it, cs, it.x * cs, it.y * cs); });
-  h += "</div></div><div class='legende'><span class='tag bleu'>💧 fond humide</span><span class='tag'>▨ ventilé : ⏳ pourrit moins</span><span class='tag'>🔸 fragile : rien de lourd dessus</span>" + (cache.length ? "<span class='tag or'>🗝️ cachette</span>" : "") + "<span class='tag'>⬇ tout repose sur un appui</span><span class='tag'>🪚 planche = étagère</span><span class='tag'>↻ double-tap ou 2ᵉ doigt</span></div>";
-  h += "<div id='detail' class='bloc'></div>";
-  if (S.ile) h += "<div class='quai-barre" + (S.quai.length ? "" : " vide") + "'><div class='tete'>⚓ Quai <span class='muted' style='font-family:Inter'>" + (S.quai.length ? S.quai.length + " item(s) à charger" : "") + "</span>" + (S.quai.length ? "<button class='primaire' id='bToutRanger'>Tout ranger</button>" : "") + "</div><div id='quai' class='" + (S.quai.length ? "" : "vide") + "' data-vide='Quai vide. Glissez un item ici pour le décharger.'>" + S.quai.map((it) => itemHtml(it, Math.min(cs, 44), null, null)).join("") + "</div></div>";
+  if (glisse || glisseMarin) return;
+  const p = $("#p-cale"); const scroll = p.scrollTop; const n = navire(); const H = n.coupe.hauteur;
+  const s = salleSelectionnee();
+  const rc = ratioCharge(); const st = stabilite(); const dq = desequilibre(); const cg = centreGravite();
+  let h = "<div class='nav-tete'><h2>" + esc(S.navire.nom) + "</h2><button class='btnMini' id='bRenommer' aria-label='Renommer le navire'>✏️</button></div>";
+  h += "<div class='tags' style='margin:-4px 0 8px'><span class='tag' style='background:" + n.couleurCoque + ";color:#fff'>" + esc(n.nom) + "</span><span class='tag'>" + S.equipage.length + "/" + n.equipageMax + " marins</span><span class='tag'>" + n.canons + " canons</span><span class='tag'>" + cales().length + " cale(s)</span></div>";
+  // Vue en coupe
+  const y0 = hautCoupe(n); const Hv = H - y0;
+  h += "<div class='coupe-cadre'><div class='coupe' style='aspect-ratio:366/" + Hv + ";width:100%;max-width:560px'><div class='coupe-in' style='transform:rotate(" + (dq * 2.2).toFixed(2) + "deg)'>" + silhouetteSvg(n) +
+    sallesNavire().map((x) => boiteSalle(x, H, y0)).join("") +
+    (cg ? "<span class='cg " + (Math.abs(dq) < 0.15 ? "ok" : "") + "' role='img' aria-label='Centre de gravité' style='left:" + (cg.x / 366 * 100) + "%;top:" + ((cg.y - y0) / Hv * 100) + "%'>+</span>" : "") +
+    "</div></div><span class='lbl-bord g'>◀ POUPE</span><span class='lbl-bord d'>PROUE ▶</span></div>";
+  // Jauges du navire
+  const assiette = Math.abs(dq) < 0.15 ? "Équilibrée" : dq > 0 ? "Sur l'avant" : "Sur l'arrière";
+  h += "<div class='pastilles'>" +
+    "<div class='pas'><span>⚖️ Charge</span><b class='" + (rc > 1 ? "rouge" : rc > C.cale.seuilRalentissement ? "orange" : "") + "'>" + charge() + "/" + n.chargeMax + "</b></div>" +
+    "<div class='pas'><span>⚓ Stabilité</span><b class='" + (st < 0.5 ? "orange" : "") + "'>" + pct(st) + "</b></div>" +
+    "<div class='pas'><span>↔️ Assiette</span><b class='" + (Math.abs(dq) >= 0.15 ? "orange" : "") + "'>" + assiette + "</b><i class='assiette'><i style='left:" + (50 + dq * 50) + "%'></i></i></div>" +
+    "<div class='pas'><span>💨 Vitesse</span><b>" + fmt2(vitesseNavire()) + "/j</b></div></div>";
+  // Postes rapides
+  const aSoin = sallesNavire().some((x) => typeSalle(x).action);
+  h += "<div class='postes'><button data-poste='conseil'>✨ Placement conseillé</button><button data-poste='tempete'>⛈️ Tempête</button><button data-poste='repos' " + (aSoin ? "" : "disabled title='Ni infirmerie ni dortoir sur ce navire'") + ">🛏️ Soins</button></div>";
+  // Détail de la salle
+  h += "<div id='detailSalle' class='bloc'>" + (s.cale ? detailCaleHtml(s) : detailSalleHtml(s)) + "</div>";
+  if (s.cale && S.ile) h += "<div class='quai-barre" + (S.quai.length ? "" : " vide") + "'><div class='tete'>⚓ Quai <span class='muted' style='font-family:Inter'>" + (S.quai.length ? S.quai.length + " item(s) à charger" : "") + "</span>" + (S.quai.length ? "<button class='primaire' id='bToutRanger'>Tout ranger</button>" : "") + "</div><div id='quai' class='" + (S.quai.length ? "" : "vide") + "' data-vide='Quai vide. Glissez un item ici pour le décharger.'>" + S.quai.map((it) => itemHtml(it, Math.min(tailleCase(caleDef(s.id)), 44), null, null)).join("") + "</div></div>";
   p.innerHTML = h; p.scrollTop = scroll;
+  // Interactions
+  p.querySelectorAll(".salle").forEach((el) => { el.onclick = () => { salleSel = el.dataset.salle; selection = null; vibrer(6); rendreCale(); }; el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.onclick(); } }; });
+  p.querySelectorAll(".mp[data-marin]").forEach((el) => el.addEventListener("pointerdown", debutGlisseMarin));
   p.querySelectorAll(".item").forEach((el) => el.addEventListener("pointerdown", debutGlisse));
-  const bt = $("#bToutRanger"); if (bt) bt.onclick = toutRanger;
-  rendreDetail(); rendreOnglets();
+  p.querySelectorAll("[data-poste]").forEach((b) => b.onclick = () => { const k = b.dataset.poste; let ok = true; if (k === "conseil") placementConseille(); if (k === "tempete") posteTempete(); if (k === "repos") ok = posteRepos(); if (ok) { toast(k === "tempete" ? "Tout le monde sur le pont !" : k === "repos" ? "Blessés à l'infirmerie, les autres à leur poste." : "Chacun à son poste."); vibrer(12); } rendreTout(); sauver(); });
+  const on = (id, f) => { const b = $("#" + id); if (b) b.onclick = f; };
+  on("bToutRanger", toutRanger);
+  on("bRenommer", renommerNavire);
+  if (s.cale) rendreDetail();
+  rendreOnglets();
+}
+function detailSalleHtml(s) {
+  const t = typeSalle(s); const occ = occupants(s.id);
+  let h = "<div class='d-tete'><h3 style='margin:0'>" + t.icone + " " + esc(nomSalle(s)) + "</h3><span class='muted'>" + s.places + " place(s)</span></div><p class='muted' style='margin:4px 0 8px'>" + esc(t.description) + "</p>";
+  occ.forEach((m) => {
+    const comp = t.competences || {}; const st = statutMarin(m);
+    const chips = Object.keys(comp).map((c) => [c, apportBrut(m, c) * comp[c]]).filter(([, v]) => v > 0).map(([c, v]) => "<span class='effet pos'>" + esc(nomCompetence(c)) + " " + fmt2(v) + "</span>").join("");
+    const extra = st === "patient" ? "<span class='effet pos'>+" + arr(C.salles.soinPatientParJour * (1 + competenceSalle("medecine", s.id))) + " santé / j</span>" : st === "repos" ? "<span class='effet pos'>+" + C.salles.reposSanteParJour + " santé · +" + C.salles.reposMoralParJour + " moral / j</span>" : "";
+    h += "<div class='occupant'>" + miniPortrait(m, 40, true) + "<div style='flex:1;min-width:0'><div class='nom'>" + esc(m.nom) + "</div><div class='sous'>" + esc(DB.roles[m.role].nom) + (m.secondaire ? " · second : " + esc(DB.roles[m.secondaire].nom) : "") + " · " + STATUTS[st] + " · ❤️ " + arr(m.sante) + "</div><div class='effets' style='margin-top:4px'>" + (chips || extra || "<span class='effet neg'>Inutile ici</span>") + (chips && extra ? extra : "") + "</div></div></div>";
+  });
+  for (let k = occ.length; k < s.places; k++) h += "<div class='occupant libre'><span class='place-vide grande' aria-hidden='true'></span><span class='muted'>Place libre : glissez un portrait ici</span></div>";
+  return h;
+}
+function detailCaleHtml(s) {
+  const k = caleDef(s.id); const cs = tailleCase(k); const occ = occupants(s.id);
+  let h = "<div class='d-tete'><h3 style='margin:0'>📦 " + esc(k.nom) + "</h3><span class='muted'>" + k.colonnes + "×" + k.rangees + " · " + chargeCale(s.id) + " kg</span></div><p class='muted' style='margin:4px 0 6px'>" + esc(k.description) + (s.places ? " " + esc(typeSalle(s).description) : "") + "</p>";
+  if (s.places) h += "<div class='occupants-ligne'>" + (occ.length ? occ.map((m) => miniPortrait(m, 30, true) + "<span class='sous'>" + esc(m.nom.split(" ")[0]) + " · Arrimage " + fmt2(competenceSalle("arrimage", s.id)) + "</span>").join("") : "<span class='place-vide'></span><span class='sous'>Personne pour protéger cette cale</span>") + "</div>";
+  h += "<div class='coque-wrap'><span class='lbl' style='left:4px;top:50%;transform:translateY(-50%) rotate(-90deg)'>POUPE</span><span class='lbl' style='right:4px;top:50%;transform:translateY(-50%) rotate(90deg)'>PROUE</span><span class='lbl' style='left:50%;top:7px;transform:translateX(-50%)'>HAUT</span><span class='lbl' style='left:50%;bottom:8px;transform:translateX(-50%)'>" + (k.fondHumide ? "FOND · HUMIDE" : "FOND · SEC") + "</span><div id='grille' data-cale='" + k.id + "' style='width:" + k.colonnes * cs + "px;height:" + k.rangees * cs + "px'>";
+  const cache = aAmelio("cachette") ? (k.cachette || []).map((c) => c.join(",")) : [];
+  for (let y = 0; y < k.rangees; y++) for (let x = 0; x < k.colonnes; x++) h += "<div class='case" + (k.fondHumide && y === k.rangees - 1 ? " humide" : "") + (k.toutVentile || (k.colonnesVentilees || []).includes(x) ? " vent" : "") + (cache.includes(x + "," + y) || k.discretion ? " cache" : "") + "' style='left:" + x * cs + "px;top:" + y * cs + "px;width:" + cs + "px;height:" + cs + "px'></div>";
+  itemsDe(k.id).forEach((it) => { h += itemHtml(it, cs, it.x * cs, it.y * cs); });
+  h += "</div></div><div class='legende'>" + (k.fondHumide ? "<span class='tag bleu'>💧 fond humide</span>" : "<span class='tag vert'>☀️ cale sèche</span>") + "<span class='tag'>▨ ventilé</span><span class='tag'>⬇ tout repose sur un appui</span><span class='tag'>🪚 planche = étagère</span>" + (cales().length > 1 ? "<span class='tag or'>⇄ changer de cale : glissez sur la coupe ou touchez l'item</span>" : "") + "</div>";
+  h += "<div id='detail'></div>";
+  return h;
+}
+async function renommerNavire() {
+  const r = await modale({ titre: "Renommer le navire", icone: "✏️", html: "<label for='nomNavire' class='muted'>Nouveau nom</label><input id='nomNavire' maxlength='28' value='" + esc(S.navire.nom) + "' style='width:100%;box-sizing:border-box;margin-top:4px;padding:10px;font:inherit;font-size:16px;border:1px solid #8c6239;border-radius:10px;background:#fffaf0'>", boutons: [{ t: "Renommer", primaire: true }, { t: "Annuler" }] });
+  const champ = $("#nomNavire"); const v = champ ? champ.value.trim() : "";
+  if (r === 0 && v) { S.navire.nom = v; journal("Le navire s'appelle désormais <b>" + esc(v) + "</b>."); rendreTout(); sauver(); }
 }
 function toutRanger() {
   const tri = [...S.quai].sort((a, b) => DB.items[b.id].poids * dimsAire(b) - DB.items[a.id].poids * dimsAire(a));
@@ -922,8 +1164,7 @@ function toutRanger() {
   document.querySelectorAll("#grille .item").forEach((el) => el.classList.add("pose"));
 }
 function dimsAire(it) { const d = DB.items[it.id]; return d.largeur * d.hauteur; }
-function casesOccupees() { return S.cale.reduce((s, it) => { const d = dims(it); return s + d.w * d.h; }, 0); }
-function enRisque(it) { if (it.x < 0) return false; const d = DB.items[it.id]; return (d.craintEau && auFond(it)) || (d.fragile && poidsAuDessus(it) > C.cale.poidsFragile); }
+function enRisque(it) { if (it.x < 0 || !it.cale) return false; const d = DB.items[it.id]; return (d.craintEau && auFond(it)) || (d.fragile && poidsAuDessus(it) > C.cale.poidsFragile); }
 function itemHtml(it, cs, left, top) {
   const d = DB.items[it.id]; const dm = dims(it);
   const pos = left === null ? "" : "left:" + left + "px;top:" + top + "px;";
@@ -934,14 +1175,17 @@ function itemHtml(it, cs, left, top) {
 }
 function risquesPosition(it) {
   const d = DB.items[it.id]; const r = [];
-  if (it.x < 0) return r;
+  if (it.x < 0 || !it.cale) return r;
+  const k = caleDe(it);
   if (d.fixe) r.push(["pos", "🪚 Fixée à la coque : elle sert d'appui, même au-dessus du vide."]);
-  else if (!appuiInfo(it, it.x, it.y, it.rot, occupation(it.uid)).stable) r.push(["neg", "⬇ Mal calé : son centre n'est pas au-dessus d'un appui."]);
+  else if (!appuiInfo(it, k.id, it.x, it.y, it.rot, occupation(k.id, it.uid)).stable) r.push(["neg", "⬇ Mal calé : son centre n'est pas au-dessus d'un appui."]);
   if (d.craintEau && auFond(it)) r.push(["neg", "💧 Au fond de cale humide : il s'abîme chaque jour en mer."]);
+  if (d.craintEau && !k.fondHumide) r.push(["pos", "☀️ Cale sèche : à l'abri de l'humidité."]);
   if (d.fragile) { const p = poidsAuDessus(it); if (p > C.cale.poidsFragile) r.push(["neg", "🔸 " + p + " kg posés dessus : il souffrira des chocs."]); else r.push(["pos", "🔸 Rien de lourd dessus : bien protégé."]); }
   if (d.perissable) r.push(ventile(it) ? ["pos", "▨ Zone ventilée : pourrit moins vite."] : ["", "⏳ Hors zone ventilée : pourrit à vitesse normale."]);
-  if (d.poids >= 9 && it.y < navire().rangees - 2) r.push(["neg", "⚖️ Lourd et placé haut : le navire est moins stable."]);
-  if (dansCachette(it)) r.push(["pos", "🗝️ Dans la cachette : presque invisible aux inspections."]);
+  if (d.poids >= 9 && it.y < k.rangees - 2) r.push(["neg", "⚖️ Lourd et placé haut : le navire est moins stable."]);
+  if (dansCachette(it)) r.push(["pos", "🗝️ Bien caché : presque invisible aux inspections."]);
+  const arrim = competenceSalle("arrimage", k.id); r.push(arrim > 0 ? ["pos", "📦 Arrimage de la cale : " + fmt2(arrim)] : ["", "📦 Personne n'arrime cette cale."]);
   return r;
 }
 function rendreDetail() {
@@ -950,10 +1194,12 @@ function rendreDetail() {
   if (!it) { el.innerHTML = "<span class='muted'>👆 Touchez un item pour voir ses caractéristiques et les risques de son emplacement. Glissez-le pour le déplacer.</span>"; return; }
   const d = DB.items[it.id]; const c = it.contrat ? S.contrats.find((x) => x.id === it.contrat) : null;
   const risques = risquesPosition(it);
-  el.innerHTML = "<div style='display:flex;gap:10px;align-items:center'><div class='article' style='margin:0;padding:0;border:0;box-shadow:none;background:none'><div class='ai' style='background:" + d.couleur + "'>" + d.icone + "</div></div><div style='flex:1;min-width:0'><div class='nom' style='font-size:15px'>" + esc(d.nom) + "</div><div class='sous'>" + dims(it).w + "×" + dims(it).h + " · " + d.poids + " kg · valeur " + d.prix + " 💰</div>" + jauge(it.etat) + "</div><b style='font-size:15px'>" + arr(it.etat) + " %</b></div>" +
+  const autres = S.cale.includes(it) ? cales().filter((x) => x.id !== it.cale) : [];
+  el.innerHTML = "<div style='display:flex;gap:10px;align-items:center;border-top:1px dashed var(--parchemin2);padding-top:8px'><div class='article' style='margin:0;padding:0;border:0;box-shadow:none;background:none'><div class='ai' style='background:" + d.couleur + "'>" + d.icone + "</div></div><div style='flex:1;min-width:0'><div class='nom' style='font-size:15px'>" + esc(d.nom) + "</div><div class='sous'>" + dims(it).w + "×" + dims(it).h + " · " + d.poids + " kg · valeur " + d.prix + " 💰" + (it.cale && S.cale.includes(it) ? " · " + esc(caleDe(it).nom) : "") + "</div>" + jauge(it.etat) + "</div><b style='font-size:15px'>" + arr(it.etat) + " %</b></div>" +
     "<div style='margin:6px 0'>" + contraintesTags(d, it) + (c ? "<span class='tag or'>📜 " + esc(c.titre) + "</span>" : "") + "</div>" +
     (risques.length ? "<div class='effets'>" + risques.map(([s, t]) => "<span class='effet " + s + "'>" + t + "</span>").join("") + "</div>" : "") +
     "<div class='actions'><button id='bPivot'>↻ Pivoter</button>" +
+    autres.map((x) => "<button data-vers='" + x.id + "'>⇄ " + esc(nomSalle(x)) + "</button>").join("") +
     (S.ile && S.cale.includes(it) ? "<button id='bQuai'>⬇ Sur le quai</button>" : "") +
     (S.ile && !S.cale.includes(it) ? "<button class='primaire' id='bAuto'>⬆ Ranger</button>" : "") +
     (S.ile && ileAct().marche && !it.contrat ? "<button class='or' id='bVendre'>Vendre " + prixVente(S.ile, it) + " 💰</button>" : "") +
@@ -961,18 +1207,26 @@ function rendreDetail() {
   const on = (id, f) => { const b = $("#" + id); if (b) b.onclick = f; };
   on("bPivot", () => pivoter(it));
   on("bQuai", () => { versQuai(it); rendreTout(); sauver(); });
-  on("bAuto", () => { if (!placerAuto(it)) toast("Pas de place dans la cale."); else vibrer(10); rendreTout(); sauver(); animerItem(it.uid, "pose"); });
+  on("bAuto", () => { if (!placerAuto(it, salleSel && salleDef(salleSel).cale ? salleSel : null) && !placerAuto(it)) toast("Pas de place dans les cales."); else vibrer(10); rendreTout(); sauver(); animerItem(it.uid, "pose"); });
+  el.querySelectorAll("[data-vers]").forEach((b) => b.onclick = () => changerDeCale(it, b.dataset.vers));
   on("bVendre", () => vendre(it));
   on("bJeter", async () => { const r = await modale({ titre: "Jeter à la mer ?", icone: "🌊", theme: "mer", html: "<p>" + esc(d.nom) + " sera perdu définitivement.</p>", boutons: [{ t: "Jeter", primaire: true }, { t: "Annuler" }] }); if (r === 0) { retirer(it); rendreTout(); sauver(); } });
+}
+function changerDeCale(it, caleId) {
+  const k = caleDef(caleId);
+  if (k.accepte && !k.accepte.includes(it.id)) { toast(k.nom + " n'accepte pas cet item."); return false; }
+  if (!placerAuto(it, caleId)) { toast("Pas de place dans " + k.nom + "."); return false; }
+  salleSel = caleId; vibrer(12); toast(DB.items[it.id].nom + " → " + k.nom); rendreTout(); sauver(); animerItem(it.uid, "pose"); return true;
 }
 function animerItem(uidItem, classe) { const el = document.querySelector("#p-cale .item[data-uid='" + uidItem + "']"); if (el) { el.classList.remove(classe); void el.offsetWidth; el.classList.add(classe); } }
 function pivoter(it) {
   if (!S.cale.includes(it)) { it.rot = !it.rot; rendreCale(); animerItem(it.uid, "pose"); return; }
-  if (peutPlacer(it, it.x, it.y, !it.rot)) { it.rot = !it.rot; appliquerGravite(); rendreTout(); sauver(); animerItem(it.uid, "pose"); vibrer(10); }
-  else { toast(raisonPlacement(it, it.x, it.y, !it.rot) === "appui" ? "Une fois pivoté, il n'aurait plus d'appui." : "Pas la place de le pivoter ici."); animerItem(it.uid, "refus"); }
+  if (peutPlacer(it, it.cale, it.x, it.y, !it.rot)) { it.rot = !it.rot; appliquerGravite(); rendreTout(); sauver(); animerItem(it.uid, "pose"); vibrer(10); }
+  else { const r = raisonPlacement(it, it.cale, it.x, it.y, !it.rot); toast(r === "appui" ? "Une fois pivoté, il n'aurait plus d'appui." : "Pas la place de le pivoter ici."); animerItem(it.uid, "refus"); }
 }
 
-/* ---------- Glisser-déposer (souris et tactile) ---------- */
+/* ---------- Glisser-déposer de la marchandise (souris et tactile) ---------- */
+function salleSous(x, y) { const el = document.elementFromPoint(x, y); return el ? el.closest(".coupe .salle") : null; }
 function debutGlisse(ev) {
   if (glisse) { // un 2e doigt pendant le glisser : pivoter
     if (glisse.bouge) { glisse.it.rot = !glisse.it.rot; majFantome(); vibrer(10); }
@@ -981,13 +1235,13 @@ function debutGlisse(ev) {
   const el = ev.currentTarget; const it = tousItems().find((x) => x.uid === el.dataset.uid); if (!it) return;
   ev.preventDefault();
   const r = el.getBoundingClientRect();
-  glisse = { it, el, id: ev.pointerId, rot0: it.rot, x0: ev.clientX, y0: ev.clientY, x: ev.clientX, y: ev.clientY, fx: (ev.clientX - r.left) / r.width, fy: (ev.clientY - r.top) / r.height, bouge: false, fantome: null, apercu: null, cible: null };
+  glisse = { it, el, id: ev.pointerId, rot0: it.rot, x0: ev.clientX, y0: ev.clientY, x: ev.clientX, y: ev.clientY, fx: (ev.clientX - r.left) / r.width, fy: (ev.clientY - r.top) / r.height, bouge: false, fantome: null, apercu: null, cible: null, versCale: null };
   window.addEventListener("pointermove", pendantGlisse); window.addEventListener("pointerup", finGlisse); window.addEventListener("pointercancel", finGlisse);
   window.addEventListener("pointerdown", secondDoigt, true);
 }
 function secondDoigt(ev) { if (glisse && ev.pointerId !== glisse.id && glisse.bouge) { ev.preventDefault(); ev.stopPropagation(); glisse.it.rot = !glisse.it.rot; majFantome(); vibrer(10); } }
 function majFantome() {
-  const g = glisse; if (!g || !g.fantome) return; const cs = tailleCase(); const dm = dims(g.it);
+  const g = glisse; if (!g || !g.fantome) return; const grille = $("#grille"); const cs = tailleCase(caleDef(grille ? grille.dataset.cale : calePrincipale())); const dm = dims(g.it);
   g.fantome.style.width = (dm.w * cs - 4) + "px"; g.fantome.style.height = (dm.h * cs - 4) + "px";
   pendantGlisse({ clientX: g.x, clientY: g.y, pointerId: g.id });
 }
@@ -995,31 +1249,36 @@ function pendantGlisse(ev) {
   const g = glisse; if (!g || ev.pointerId !== g.id) return;
   g.x = ev.clientX; g.y = ev.clientY;
   if (!g.bouge && Math.hypot(ev.clientX - g.x0, ev.clientY - g.y0) < 6) return;
-  const cs = tailleCase(); const dm = dims(g.it); const d = DB.items[g.it.id];
   const grille = $("#grille"); if (!grille) return;
+  const caleId = grille.dataset.cale; const k = caleDef(caleId); const cs = tailleCase(k); const dm = dims(g.it); const d = DB.items[g.it.id];
   if (!g.bouge) {
     g.bouge = true; g.fantome = g.el.cloneNode(true); g.fantome.classList.add("fantome"); g.fantome.classList.remove("sel", "risque");
     g.fantome.style.width = (dm.w * cs - 4) + "px"; g.fantome.style.height = (dm.h * cs - 4) + "px"; g.fantome.style.left = "0"; g.fantome.style.top = "0"; g.fantome.style.margin = "0";
     document.body.appendChild(g.fantome); g.el.style.opacity = "0.25";
-    grille.classList.toggle("g-eau", !!d.craintEau); grille.classList.toggle("g-peris", !!d.perissable); grille.classList.toggle("g-cache", C.iles.some((i) => i.interdits.includes(d.id)));
+    grille.classList.toggle("g-eau", !!d.craintEau); grille.classList.toggle("g-peris", !!d.perissable); grille.classList.toggle("g-cache", estContrebandeQuelquePart(d.id));
     vibrer(8);
   }
   const w = dm.w * cs, h = dm.h * cs; const ox = g.fx * w, oy = g.fy * h;
-  g.fantome.style.transform = "translate(" + (ev.clientX - ox) + "px," + (ev.clientY - oy) + "px) rotate(" + (g.it.rot !== g.rot0 ? 0 : 0) + "deg) scale(1.06)";
+  g.fantome.style.transform = "translate(" + (ev.clientX - ox) + "px," + (ev.clientY - oy) + "px) scale(1.06)";
   const gr = grille.getBoundingClientRect();
   const gx = Math.round((ev.clientX - ox - gr.left) / cs); const gy = Math.round((ev.clientY - oy - gr.top) / cs);
   const dedans = ev.clientX >= gr.left - cs && ev.clientX <= gr.right + cs && ev.clientY >= gr.top - cs && ev.clientY <= gr.bottom + cs;
   if (!g.apercu) { g.apercu = document.createElement("div"); g.apercu.className = "apercu"; grille.appendChild(g.apercu); }
   if (dedans) {
-    const raison = raisonPlacement(g.it, gx, gy, g.it.rot); const ok = !raison;
+    const raison = raisonPlacement(g.it, caleId, gx, gy, g.it.rot); const ok = !raison;
     let classe = ok ? "ok" : "non";
-    g.apercu.innerHTML = raison === "appui" ? "<span>⬇ sans appui</span>" : "";
-    if (ok) { const t = Object.assign({}, g.it, { x: gx, y: gy }); if ((d.craintEau && auFond(t)) || (d.fragile && poidsAuDessus(t) > C.cale.poidsFragile)) classe = "risque"; }
+    g.apercu.innerHTML = raison === "appui" ? "<span>⬇ sans appui</span>" : raison === "type" ? "<span>refusé dans cette cale</span>" : "";
+    if (ok) { const t = Object.assign({}, g.it, { cale: caleId, x: gx, y: gy }); if ((d.craintEau && auFond(t)) || (d.fragile && poidsAuDessus(t) > C.cale.poidsFragile)) classe = "risque"; }
     g.apercu.className = "apercu " + classe; g.apercu.style.display = "block";
     g.apercu.style.left = gx * cs + "px"; g.apercu.style.top = gy * cs + "px"; g.apercu.style.width = w + "px"; g.apercu.style.height = h + "px";
     if (ok && (!g.cible || g.cible.x !== gx || g.cible.y !== gy)) vibrer(4);
     g.cible = ok ? { x: gx, y: gy } : null;
   } else { g.apercu.style.display = "none"; g.cible = null; }
+  // Vers une autre cale de la vue en coupe
+  document.querySelectorAll(".coupe .salle.cible").forEach((x) => x.classList.remove("cible"));
+  const sal = dedans ? null : salleSous(ev.clientX, ev.clientY);
+  g.versCale = sal && sal.classList.contains("est-cale") && sal.dataset.salle !== caleId ? sal.dataset.salle : null;
+  if (g.versCale) sal.classList.add("cible");
   const quai = $("#quai"); g.surQuai = false;
   if (quai) { const q = quai.parentElement.getBoundingClientRect(); g.surQuai = ev.clientX >= q.left && ev.clientX <= q.right && ev.clientY >= q.top && ev.clientY <= q.bottom; }
 }
@@ -1034,20 +1293,56 @@ function finGlisse(ev) {
     if (dernierTap.uid === g.it.uid && t - dernierTap.t < 320) { dernierTap = { uid: null, t: 0 }; selection = g.it.uid; pivoter(g.it); return; }
     dernierTap = { uid: g.it.uid, t }; selection = g.it.uid; rendreCale(); return;
   }
+  const grille = $("#grille"); const caleId = grille ? grille.dataset.cale : calePrincipale();
   let resultat = "refus";
   if (g.cible) {
-    g.it.x = g.cible.x; g.it.y = g.cible.y; S.quai = S.quai.filter((q) => q.uid !== g.it.uid); if (!S.cale.includes(g.it)) S.cale.push(g.it); resultat = "pose"; vibrer(12);
+    S.cale = S.cale.filter((c) => c !== g.it); g.it.cale = caleId; g.it.x = g.cible.x; g.it.y = g.cible.y; S.quai = S.quai.filter((q) => q.uid !== g.it.uid); S.cale.push(g.it); resultat = "pose"; vibrer(12);
     appliquerGravite();
-  } else if (g.surQuai && S.ile) { versQuai(g.it); resultat = "pose"; }
+  } else if (g.versCale) { g.it.rot = g.rot0; selection = g.it.uid; if (changerDeCale(g.it, g.versCale)) return; }
+  else if (g.surQuai && S.ile) { versQuai(g.it); resultat = "pose"; }
   else g.it.rot = g.rot0;
   selection = g.it.uid; rendreTout(); sauver(); animerItem(g.it.uid, resultat);
 }
 window.addEventListener("keydown", (e) => {
-  if ((e.key === "r" || e.key === "R") && !modaleOuverte) {
+  if ((e.key === "r" || e.key === "R") && !modaleOuverte && !(e.target && e.target.tagName === "INPUT")) {
     if (glisse && glisse.bouge) { glisse.it.rot = !glisse.it.rot; majFantome(); return; }
     if (selection) { const it = tousItems().find((x) => x.uid === selection); if (it) pivoter(it); }
   }
 });
+
+/* ---------- Glisser-déposer des marins entre les salles ---------- */
+let glisseMarin = null;
+function debutGlisseMarin(ev) {
+  const el = ev.currentTarget; const m = S.equipage.find((x) => x.id === el.dataset.marin); if (!m || glisseMarin) return;
+  ev.preventDefault(); ev.stopPropagation();
+  glisseMarin = { m, el, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, bouge: false, fantome: null, cible: null };
+  window.addEventListener("pointermove", pendantGlisseMarin); window.addEventListener("pointerup", finGlisseMarin); window.addEventListener("pointercancel", finGlisseMarin);
+}
+function pendantGlisseMarin(ev) {
+  const g = glisseMarin; if (!g || ev.pointerId !== g.id) return;
+  if (!g.bouge && Math.hypot(ev.clientX - g.x0, ev.clientY - g.y0) < 6) return;
+  if (!g.bouge) {
+    g.bouge = true; g.fantome = document.createElement("div"); g.fantome.className = "mp-fantome"; g.fantome.innerHTML = portraitSvg(g.m.portrait, 44);
+    document.body.appendChild(g.fantome); g.el.style.opacity = "0.3"; vibrer(8);
+    document.querySelectorAll(".coupe .salle").forEach((x) => { const s = salleDef(x.dataset.salle); if (s.places > 0 && apportDans(g.m, s.id) > 0) x.classList.add("utile"); });
+  }
+  g.fantome.style.transform = "translate(" + (ev.clientX - 24) + "px," + (ev.clientY - 24) + "px)";
+  document.querySelectorAll(".coupe .salle.cible, .coupe .salle.cible-non").forEach((x) => x.classList.remove("cible", "cible-non"));
+  const sal = salleSous(ev.clientX, ev.clientY); g.cible = null;
+  if (sal) { const s = salleDef(sal.dataset.salle); if (s.places > 0) { sal.classList.add("cible"); g.cible = s.id; } else sal.classList.add("cible-non"); }
+}
+function finGlisseMarin(ev) {
+  const g = glisseMarin; if (!g || (ev && ev.pointerId !== undefined && ev.pointerId !== g.id)) return;
+  glisseMarin = null;
+  window.removeEventListener("pointermove", pendantGlisseMarin); window.removeEventListener("pointerup", finGlisseMarin); window.removeEventListener("pointercancel", finGlisseMarin);
+  if (g.fantome) g.fantome.remove();
+  if (!g.bouge) { salleSel = g.m.salle; rendreCale(); return; }
+  if (g.cible && g.cible !== g.m.salle) {
+    const avant = occupants(g.cible).length >= salleDef(g.cible).places;
+    if (deplacerMarin(g.m, g.cible)) { vibrer(12); toast(g.m.nom.split(" ")[0] + " → " + nomSalle(salleDef(g.cible)) + (avant ? " (échange)" : "")); salleSel = g.cible; sauver(); }
+  }
+  rendreTout();
+}
 
 /* ---------- Panneau Carte ---------- */
 function navireCarte() { return "<g id='navCarte'><circle r='3.2' fill='#ffe08a' opacity='.35' class='pulse'/><g id='navCarteSens'><path d='M-2.6 0.4 L2.6 0.4 L2 1.6 L-2 1.6Z' fill='#5a3a1e' stroke='#2e1c0e' stroke-width='.2'/><path d='M0 0.4 V-3.4' stroke='#2e1c0e' stroke-width='.3'/><path d='M0.2 -3.2 Q2.2 -1.4 0.2 0.1Z' fill='#fbf1d8'/><path d='M-0.2 -2.8 Q-1.8 -1.3 -0.2 0.1Z' fill='#efe2c0'/></g></g>"; }
@@ -1149,12 +1444,14 @@ function rendreEquipage() {
   S.equipage.forEach((m) => {
     h += "<div class='bloc marin'>" + portraitSvg(m.portrait, 64) + "<div style='flex:1;min-width:0'><div class='nom' style='font-size:15px'>" + esc(m.nom) + "</div><div class='muted'>" + esc(DB.roles[m.role].nom) + (m.secondaire ? " · second : " + esc(DB.roles[m.secondaire].nom) : "") + " · " + m.salaire + " or/j</div>" +
       (m.traits.length ? "<div>" + m.traits.map((t) => "<span class='tag' title='" + esc(DB.traits[t].description) + "'>" + esc(DB.traits[t].nom) + "</span>").join("") + "</div>" : "") +
+      "<button class='btnPoste' data-poste-marin='" + m.id + "'>📍 " + esc(salleDef(m.salle) ? nomSalle(salleDef(m.salle)) : "—") + " · " + STATUTS[statutMarin(m)] + " ›</button>" +
       "<div class='grille2' style='margin-top:4px'><div class='muted'>❤️ Santé " + arr(m.sante) + jauge(m.sante) + "</div><div class='muted'>🙂 Moral " + arr(m.moral) + jauge(m.moral) + "</div></div></div></div>";
   });
   const comps = [["navigation", "🧭"], ["arrimage", "📦"], ["charpente", "🔨"], ["cuisine", "🍲"], ["medecine", "⚕️"], ["defense", "💣"], ["vigie", "🔭"], ["commerce", "🤝"]];
   h += "<h3>Compétences</h3><div class='bloc grille2'>" + comps.map(([c, ic]) => { const v = competence(c); return "<div style='font-size:12.5px'>" + ic + " " + esc(nomCompetence(c)) + " <b style='float:right'>" + v.toFixed(2) + "</b>" + jauge(v, 1.5) + "</div>"; }).join("") + "</div>";
-  h += "<p class='muted'>Un rôle sans titulaire n'apporte rien : les tests correspondants sont plus difficiles. Recrutez à la taverne quand le navire a de la place.</p>";
+  h += "<p class='muted'>Une compétence ne compte que si le marin est dans la bonne salle : réorganisez l'équipage depuis l'onglet Bateau. Recrutez à la taverne quand le navire a de la place.</p>";
   p.innerHTML = h;
+  p.querySelectorAll("[data-poste-marin]").forEach((b) => b.onclick = () => { const m = S.equipage.find((x) => x.id === b.dataset.posteMarin); if (m) { salleSel = m.salle; document.body.classList.remove("voirEquipage"); rendreCale(); afficherPanneau("p-cale"); } });
 }
 
 /* ---------- Fenêtre modale ---------- */
@@ -1172,14 +1469,14 @@ let minuteurToast = null;
 function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.add("vu"); clearTimeout(minuteurToast); minuteurToast = setTimeout(() => el.classList.remove("vu"), 2400); }
 
 async function menu() {
-  const r = await modale({ titre: "Menu", icone: "☰", html: "<p class='muted'>Prototype 0.3 · la partie est sauvegardée automatiquement dans ce navigateur.</p>", boutons: [{ t: "Reprendre", primaire: true }, { t: "Comment jouer" }, { t: "Nouvelle partie" }] });
+  const r = await modale({ titre: "Menu", icone: "☰", html: "<p class='muted'>Prototype 0.4 · la partie est sauvegardée automatiquement dans ce navigateur.</p>", boutons: [{ t: "Reprendre", primaire: true }, { t: "Comment jouer" }, { t: "Nouvelle partie" }] });
   if (r === 1) aide();
   if (r === 2) { const c = await modale({ titre: "Nouvelle partie ?", icone: "⚠️", theme: "echec", html: "<p>La partie en cours sera effacée.</p>", boutons: [{ t: "Recommencer", primaire: true }, { t: "Annuler" }] }); if (c === 0) { nouvellePartie(); destination = null; selection = null; enPause = true; vuePort = "accueil"; precedent = null; rendreTout(); afficherPanneau("p-port"); } }
 }
 function aide() {
   return modale({ titre: "Comment jouer", icone: "🧭", theme: "mer", html: "<ul>" +
     "<li><b>⚓ Port</b> : chaque lieu a son rôle. Capitainerie pour les contrats, Marché pour acheter et vendre, Taverne pour les rumeurs et les recrues. Ce que vous recevez arrive sur le <b>quai</b>.</li>" +
-    "<li><b>📦 Cale</b> : glissez les items du quai vers la grille, ou utilisez « Tout ranger ». Pour pivoter : double-tap, un 2ᵉ doigt pendant le glisser, ou la touche R. Un <b>!</b> orange signale un item mal placé. Chaque item doit reposer sur le plancher ou sur un autre item : achetez des <b>planches</b> au marché pour créer des étagères et surélever la marchandise.</li>" +
+    "<li><b>⛵ Bateau</b> : la vue en coupe montre les salles et l'équipage. Touchez une salle pour l'ouvrir. Glissez un portrait d'une salle à l'autre : une compétence ne compte que dans la bonne salle (navigation sur le pont, cuisine en coquerie…). Les boutons Conseillé, Tempête et Soins réorganisent tout d'un geste.</li><li><b>📦 Cales</b> : glissez les items du quai vers la grille, ou utilisez « Tout ranger ». Glissez un item sur une autre cale de la vue en coupe pour l'y déplacer. Pour pivoter : double-tap, un 2ᵉ doigt pendant le glisser, ou la touche R. Un <b>!</b> orange signale un item mal placé. Chaque item doit reposer sur le plancher ou sur un autre item : achetez des <b>planches</b> au marché pour créer des étagères et surélever la marchandise.</li>" +
     "<li><b>🗺️ Carte</b> : touchez une île pour y aller, ou la mer et le brouillard pour explorer.</li>" +
     "<li><b>⛵ En mer</b> : ⏸ x1 x2 x4 règlent le temps. L'équipage mange 1 ration par jour. Les événements mettent le jeu en pause.</li>" +
     "<li><b>⚠️ Contrebande</b> : très rentable là où elle est interdite, mais gare aux inspections.</li>" +
@@ -1203,7 +1500,7 @@ function demarrer() {
   window.addEventListener("resize", () => { if (glisse || Math.abs(window.innerWidth - largeurPrec) < 20) return; largeurPrec = window.innerWidth; rendreTout(); });
   requestAnimationFrame(boucle);
   if (!reprise) aide();
-  window.__jeu = { get S() { return S; }, DB, competence, vitesseNavire, avancer, arriver, finDeJournee, lancerEvenement, naufrage, rendreTout, raisonPlacement, appliquerGravite, creerItem, retirer, placerAuto };
+  window.__jeu = { get S() { return S; }, DB, competence, competenceSalle, placementConseille, posteTempete, posteRepos, deplacerMarin, statutMarin, changerDeCale, desequilibre, stabilite, centreGravite, calePrincipale, cales, vitesseNavire, avancer, arriver, finDeJournee, lancerEvenement, naufrage, rendreTout, raisonPlacement, appliquerGravite, creerItem, retirer, placerAuto };
 }
 demarrer();
 })();
