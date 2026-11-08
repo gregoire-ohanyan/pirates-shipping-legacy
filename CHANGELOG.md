@@ -3,6 +3,54 @@
 Toutes les modifications notables du jeu sont listées ici, de la plus récente à la plus ancienne.
 Chaque version correspond à la valeur `VERSION` de `sw.js` (par exemple `psl-0.3.0` pour la 0.3.0).
 
+## [0.6.0] — 2026-11-08
+
+### Ajouté
+- **Le monde du jeu** (d'après la Bible de l'univers) : une fenêtre d'ouverture présente l'an 312 du Fanal, la Brume, le Reflux et les quatre factions.
+- **Légendes** : nouvelle section « Légendes » dans l'onglet Quêtes, avec 23 légendes en quatre catégories (Le monde, Factions, Personnages, Journal d'Aliénor). Une légende se découvre :
+  - dès le départ ;
+  - en accostant sur une île ;
+  - à la taverne, avec le nouveau bouton gratuit « Écouter les vieux marins » ;
+  - en mer, lors de certains événements.
+
+  Les légendes encore inconnues donnent un indice sur l'endroit où les trouver.
+- **Le fantastique en mer**, avec trois événements de nuit :
+  - **La Dernière Marée** : l'Amiral d'Os réclame un péage. On peut payer, fuir ou jouer aux dés.
+  - **Des feux sur la côte** : les faux feux des Naufrageurs. On envoie une vigie ou on fait un détour.
+  - **Une voile dans la Brume** : la Persévérance fantôme laisse une page du journal d'Aliénor.
+- **Journal d'Aliénor** : 3 pages à retrouver, sur la Persévérance et dans le trésor de l'Île du Pendu.
+- **Lanterne bénie** (amélioration, Hautegarde, 180 or) : deux fois moins de navires fantômes, et un choix pour repousser l'Amiral d'Os.
+- **Sel et faux-sel** : le sel est produit à Vasque et recherché au nord. Le faux-sel est produit chez l'Étoile Noire, et il est interdit à Hautegarde et à Vasque.
+- Une description pour chaque île, à l'accueil du port et sur la carte.
+- Des descriptions et des chefs pour chaque faction, dans Quêtes › Réputation.
+- Nouveaux jalons :
+  - « Conteur » : découvrir 12 légendes, avec le pavillon Brume en récompense ;
+  - « Sur la trace d'Aliénor » : retrouver les 3 pages du journal.
+- Nouveaux blocs dans `js/config.js` : `monde`, `categoriesLegendes`, `legendes`. Ajouts : champs `description` et `chef` des factions, `description` des îles, `legende`, `fantome`, `requiertAmelio` et la condition `pageAlienor` des événements.
+
+### Modifié
+- **Nouvelles factions** :
+
+  | Faction | Remplace | Île(s) |
+  | --- | --- | --- |
+  | Ordre des Fanaux | la Couronne d'Aubrac | Hautegarde |
+  | La Couronne | la Compagnie des Comptoirs | Vasque |
+  | L'Étoile Noire | les Colonies libres | Lunebaie, Île aux Sternes |
+  | Les Naufrageurs | la Confrérie de la Marée | La Crique Noire |
+
+  Les rivalités opposent les Fanaux aux Naufrageurs, et la Couronne à l'Étoile Noire.
+- **Effets de faction** revus :
+  - **Étoile Noire** : receleurs +20 %, Marques d'ombre (les inspecteurs trouvent deux fois moins la contrebande), délation à −30.
+  - **Naufrageurs** : pavillon ami à +20, pacte des feux morts à +40 (deux fois moins de navires fantômes).
+  - Les recrues et les vivres moins chers n'appartiennent plus à aucune faction.
+- La goélette exige 20 de réputation auprès des Fanaux.
+- La patrouille devient la « Patrouille des Fanaux ».
+- Les quêtes du gouverneur deviennent celles du Grand Gardien. La Confrérie devient les Naufrageurs.
+- La notion d'héritage disparaît :
+  - le jalon « Dynastie » devient « Revenant des mers » (survivre à 3 naufrages) ;
+  - la génération n'est plus affichée.
+- Les sauvegardes existantes sont migrées : la réputation et la méfiance passent aux nouvelles factions.
+
 ## [0.5.0] — 2026-11-08
 
 ### Ajouté

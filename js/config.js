@@ -67,6 +67,8 @@ window.CONFIG = {
     { id: "bois",      nom: "Bois précieux",         largeur: 3, hauteur: 1, poids: 12, prix: 45,  fragile: false, perissable: 0,  craintEau: false, couleur: "#5c3a1e", icone: "🪵" },
     { id: "poudre",    nom: "Baril de poudre",       largeur: 1, hauteur: 1, poids: 5,  prix: 25,  fragile: false, perissable: 0,  craintEau: true,  couleur: "#3c3c3c", icone: "💥" },
     { id: "mousquets", nom: "Caisse de mousquets",   largeur: 2, hauteur: 1, poids: 9,  prix: 60,  fragile: false, perissable: 0,  craintEau: false, couleur: "#4a4f57", icone: "🔫" },
+    { id: "sel",       nom: "Sacs de sel",           largeur: 1, hauteur: 1, poids: 6,  prix: 16,  fragile: false, perissable: 0,  craintEau: true,  couleur: "#e6e1d3", icone: "🧂" },
+    { id: "fauxsel",   nom: "Faux-sel",              largeur: 1, hauteur: 1, poids: 6,  prix: 16,  fragile: false, perissable: 0,  craintEau: true,  couleur: "#bfb49c", icone: "🫙" },
     { id: "lingots",   nom: "Lingots d'argent",      largeur: 1, hauteur: 1, poids: 14, prix: 90,  fragile: false, perissable: 0,  craintEau: false, couleur: "#b9bcc2", icone: "🥈" },
     // --- Vivres (se consomment : 1 ration par marin et par jour) ---
     { id: "biscuits",  nom: "Biscuits de mer",       largeur: 1, hauteur: 1, poids: 3,  prix: 8,   fragile: false, perissable: 0,  craintEau: true,  rations: 10, frais: false, couleur: "#c9a86a", icone: "🍘" },
@@ -82,13 +84,23 @@ window.CONFIG = {
      FACTIONS
      severite     : multiplicateur de l'amende quand de la contrebande est trouvée
      corruptible  : chance (0 à 1) qu'un pot-de-vin fonctionne lors d'une inspection
+     description  : texte affiché dans l'onglet Quêtes > Réputation
+     chef         : figure de proue de la faction { nom, titre }
      ------------------------------------------------------------------ */
   factions: [
-    { id: "couronne",  nom: "La Couronne d'Aubrac",     couleur: "#2f5d9e", severite: 2.0, corruptible: 0.2 },
-    { id: "compagnie", nom: "Compagnie des Comptoirs",  couleur: "#b07a1e", severite: 1.5, corruptible: 0.6 },
-    { id: "colonies",  nom: "Colonies libres",          couleur: "#3f8a4f", severite: 0.8, corruptible: 0.7 },
-    { id: "confrerie", nom: "Confrérie de la Marée",    couleur: "#8a2f2f", severite: 0.5, corruptible: 0.9 },
-    { id: "aucune",    nom: "Sans maître",              couleur: "#777777", severite: 0,   corruptible: 1 }
+    { id: "fanaux",      nom: "Ordre des Fanaux", couleur: "#2f5d9e", severite: 2.0, corruptible: 0.2,
+      description: "Gardiens des phares et des cartes, devenus l'autorité maritime de l'archipel. Leur Feu blanc repousse les morts.",
+      chef: { nom: "Ambroise Lumen", titre: "Grand Gardien" } },
+    { id: "couronne",    nom: "La Couronne",      couleur: "#b8902e", severite: 1.5, corruptible: 0.6,
+      description: "Pouvoir royal né du sel : monopole du sel, taxes et lettres de change. Son Sel scellé lie les contrats.",
+      chef: { nom: "Pétronille III", titre: "la Reine du Sel" } },
+    { id: "etoile",      nom: "L'Étoile Noire",   couleur: "#4a3a6a", severite: 0.8, corruptible: 0.7,
+      description: "Contrebandiers chevronnés qui tiennent la pègre de chaque port. Leurs Marques d'ombre cachent ce qui doit l'être.",
+      chef: { nom: "Séraphin Minuit", titre: "le Prince des Quais" } },
+    { id: "naufrageurs", nom: "Les Naufrageurs",  couleur: "#3f7a5f", severite: 0.5, corruptible: 0.9,
+      description: "Clans qui allument de faux feux pour piller les épaves. Leurs Feux morts appellent les noyés.",
+      chef: { nom: "Gaspard Lanterne-Verte", titre: "chef des Naufrageurs" } },
+    { id: "aucune",      nom: "Sans maître",      couleur: "#777777", severite: 0,   corruptible: 1 }
   ],
 
   /* ------------------------------------------------------------------
@@ -107,47 +119,54 @@ window.CONFIG = {
      services      : "reparation", "recrutement", "chantier", "coffre", "taverne"
      ameliorations : ids d'améliorations vendues ici (voir "ameliorations")
      evenementArrivee : id d'événement déclenché à la première arrivée (optionnel)
+     description   : présentation de l'île (accueil du port et carte)
      ------------------------------------------------------------------ */
   iles: [
-    { id: "hautegarde", nom: "Hautegarde", x: 30, y: 26, faction: "couronne", climat: "tempere", connue: true, cachee: false,
+    { id: "hautegarde", nom: "Hautegarde", x: 30, y: 26, faction: "fanaux", climat: "tempere", connue: true, cachee: false,
       danger: 0.15, surveillance: 0.6, marche: true,
       produit: { mousquets: 0.7, poudre: 0.7, biscuits: 0.8 },
-      demande: { sucre: 1.5, epices: 1.6, fruitsvente: 1.8, soie: 1.4 },
-      interdits: ["tabac", "rhum"],
-      services: ["reparation", "recrutement", "chantier", "coffre", "taverne"], ameliorations: ["coque"] },
+      demande: { sucre: 1.5, epices: 1.6, fruitsvente: 1.8, soie: 1.4, sel: 1.5 },
+      interdits: ["tabac", "rhum", "fauxsel"],
+      services: ["reparation", "recrutement", "chantier", "coffre", "taverne"], ameliorations: ["coque", "lanterne"],
+      description: "Siège du Grand Fanal, le plus vieux phare de l'archipel. Ville austère et très surveillée." },
 
-    { id: "vasque", nom: "Comptoir de Vasque", x: 76, y: 40, faction: "compagnie", climat: "tropical", connue: true, cachee: false,
+    { id: "vasque", nom: "Comptoir de Vasque", x: 76, y: 40, faction: "couronne", climat: "tropical", connue: true, cachee: false,
       danger: 0.25, surveillance: 0.4, marche: true,
-      produit: { epices: 0.6, soie: 0.65, porcelaine: 0.7 },
+      produit: { epices: 0.6, soie: 0.65, porcelaine: 0.7, sel: 0.5 },
       demande: { bois: 1.5, rhum: 1.4, poisson: 1.4 },
-      interdits: ["mousquets"],
-      services: ["reparation", "coffre", "taverne"], ameliorations: ["baches"] },
+      interdits: ["mousquets", "fauxsel"],
+      services: ["reparation", "coffre", "taverne"], ameliorations: ["baches"],
+      description: "Salines royales et entrepôts immenses. Tout s'y achète, tout y est taxé." },
 
-    { id: "lunebaie", nom: "Lunebaie", x: 40, y: 78, faction: "colonies", climat: "tropical", connue: true, cachee: false,
+    { id: "lunebaie", nom: "Lunebaie", x: 40, y: 78, faction: "etoile", climat: "tropical", connue: true, cachee: false,
       danger: 0.2, surveillance: 0.15, marche: true,
-      produit: { sucre: 0.6, rhum: 0.6, fruitsvente: 0.5, fruits: 0.7 },
+      produit: { sucre: 0.6, rhum: 0.6, fruitsvente: 0.5, fruits: 0.7, fauxsel: 0.55 },
       demande: { mousquets: 1.6, porcelaine: 1.5, poudre: 1.4 },
       interdits: [],
-      services: ["reparation", "recrutement", "taverne"], ameliorations: [] },
+      services: ["reparation", "recrutement", "taverne"], ameliorations: [],
+      description: "Port franc aux mille quais et aux mille tavernes, capitale officieuse de l'Étoile Noire." },
 
-    { id: "sternes", nom: "Île aux Sternes", x: 14, y: 104, faction: "colonies", climat: "tropical", connue: false, cachee: false,
+    { id: "sternes", nom: "Île aux Sternes", x: 14, y: 104, faction: "etoile", climat: "tropical", connue: false, cachee: false,
       danger: 0.3, surveillance: 0.1, marche: true,
-      produit: { poisson: 0.5, tabac: 0.55, bois: 0.7 },
+      produit: { poisson: 0.5, tabac: 0.55, bois: 0.7, fauxsel: 0.6 },
       demande: { biscuits: 1.5, sucre: 1.3, epices: 1.5 },
       interdits: [],
-      services: ["taverne"], ameliorations: [] },
+      services: ["taverne"], ameliorations: [],
+      description: "Îlot d'oiseaux et de guano. Repaire de contrebandiers face au premier passage du Reflux." },
 
-    { id: "criquenoire", nom: "La Crique Noire", x: 82, y: 96, faction: "confrerie", climat: "tropical", connue: false, cachee: true,
+    { id: "criquenoire", nom: "La Crique Noire", x: 82, y: 96, faction: "naufrageurs", climat: "tropical", connue: false, cachee: true,
       danger: 0.5, surveillance: 0.0, marche: true,
       produit: { lingots: 0.75, rhum: 0.8 },
-      demande: { mousquets: 2.0, poudre: 1.8, tabac: 1.6, soie: 1.5 },
+      demande: { mousquets: 2.0, poudre: 1.8, tabac: 1.6, soie: 1.5, sel: 1.4 },
       interdits: [],
-      services: ["reparation", "recrutement", "taverne"], ameliorations: ["cachette"] },
+      services: ["reparation", "recrutement", "taverne"], ameliorations: ["cachette"],
+      description: "Crique cernée de récifs, avec de faux feux allumés sur les falaises." },
 
     { id: "pendu", nom: "Île du Pendu", x: 58, y: 124, faction: "aucune", climat: "tropical", connue: false, cachee: true,
       danger: 0.6, surveillance: 0.0, marche: false,
       produit: {}, demande: {}, interdits: [],
-      services: [], ameliorations: [], evenementArrivee: "fouille_tresor" }
+      services: [], ameliorations: [], evenementArrivee: "fouille_tresor",
+      description: "Île longtemps noyée dans la Brume. Ruines anciennes, gibet sans explication." }
   ],
 
   /* ------------------------------------------------------------------
@@ -225,7 +244,7 @@ window.CONFIG = {
       ] },
 
     { id: "goelette", nom: "Goélette", nomParDefaut: "La Mouette", silhouette: "goelette", couleurCoque: "#2f5d4e",
-      requiert: { faction: "couronne", reputation: 20 }, // en vente seulement si la Couronne vous estime assez
+      requiert: { faction: "fanaux", reputation: 20 }, // en vente seulement si les Fanaux vous estiment assez
       chargeMax: 110, vitesse: 15, coqueMax: 160, equipageMax: 6, canons: 6, emplacements: 3, prix: 1800,
       coupe: { hauteur: 340, pont: 140, quille: 326 },
       salles: [
@@ -246,11 +265,13 @@ window.CONFIG = {
      effet  : "cachette" (active le compartiment caché du navire)
               "baches"   (divise les dégâts d'eau par diviseurEau)
               "coque"    (ajoute bonusCoque à la coque max)
+              "lanterne" (multiplie par "fantomes" la fréquence des événements fantômes)
      ------------------------------------------------------------------ */
   ameliorations: [
     { id: "cachette", nom: "Compartiment caché", prix: 250, effet: "cachette", description: "La contrebande rangée dans les cases marquées 🗝️ échappe presque toujours aux inspections." },
     { id: "baches",   nom: "Bâches goudronnées", prix: 140, effet: "baches", diviseurEau: 2, description: "Les dégâts d'eau sont divisés par 2." },
-    { id: "coque",    nom: "Coque renforcée",    prix: 220, effet: "coque", bonusCoque: 40, description: "+40 points de coque maximum." }
+    { id: "coque",    nom: "Coque renforcée",    prix: 220, effet: "coque", bonusCoque: 40, description: "+40 points de coque maximum." },
+    { id: "lanterne", nom: "Lanterne bénie",     prix: 180, effet: "lanterne", fantomes: 0.5, description: "Un Feu blanc béni par les Fanaux : deux fois moins de navires fantômes, et un moyen de les repousser." }
   ],
 
   /* ------------------------------------------------------------------
@@ -395,7 +416,7 @@ window.CONFIG = {
     margeDelai: 1.6,           // délai = durée du trajet x 1.6 (+1 jour)
     etatMin: 60,               // état minimum à la livraison (%)
     reputation: 5,
-    items: ["rhum", "sucre", "epices", "porcelaine", "poisson", "bois", "soie", "fruitsvente"] // items possibles
+    items: ["rhum", "sucre", "epices", "porcelaine", "poisson", "bois", "soie", "fruitsvente", "sel"] // items possibles
   },
 
   /* ------------------------------------------------------------------
@@ -422,10 +443,10 @@ window.CONFIG = {
      texte         : description affichée
      ------------------------------------------------------------------ */
   quetes: [
-    { id: "q_premier_rhum", type: "livraison", titre: "Le rhum du gouverneur",
+    { id: "q_premier_rhum", type: "livraison", titre: "Le rhum du Grand Gardien",
       origine: "lunebaie", destination: "hautegarde", item: "rhum", quantite: 2, delaiJours: 6, etatMin: 70,
       recompense: 220, reputation: 10, prerequis: {},
-      texte: "Le gouverneur de Hautegarde veut du rhum de Lunebaie pour son bal. Le rhum est interdit là-bas… sauf pour lui. Des inspecteurs zélés pourraient l'ignorer." },
+      texte: "Le Grand Gardien de Hautegarde réclame du rhum de Lunebaie pour la Fête des Feux. Le rhum est interdit chez les Fanaux… sauf pour lui. Ses inspecteurs, eux, ne sont pas au courant." },
 
     { id: "q_porcelaine", type: "livraison", titre: "Porcelaine pour la mariée",
       origine: "vasque", destination: "lunebaie", item: "porcelaine", quantite: 1, delaiJours: 7, etatMin: 85,
@@ -435,22 +456,22 @@ window.CONFIG = {
     { id: "q_rumeur_crique", type: "decouverte", titre: "La rumeur de la Crique Noire",
       origine: "sternes", recompense: 0, reputation: 0, prerequis: {},
       revele: ["criquenoire"],
-      texte: "Un vieux pêcheur parle d'une crique où la Confrérie achète armes et poudre sans poser de questions." },
+      texte: "Un vieux pêcheur parle d'une crique où les Naufrageurs achètent armes et poudre sans poser de questions." },
 
     { id: "q_carte_pendu", type: "decouverte", titre: "La carte du Pendu",
       origine: "criquenoire", recompense: 0, reputation: 0, prerequis: {},
       revele: ["pendu"],
-      texte: "Un pirate ivre vous vend un fragment de carte : une croix sur une île au sud, que l'on dit maudite." },
+      texte: "Un naufrageur ivre vous vend un fragment de carte : une croix sur une île sortie de la Brume, que l'on dit maudite." },
 
-    { id: "q_mousquets", type: "livraison", titre: "Armes pour la Confrérie",
+    { id: "q_mousquets", type: "livraison", titre: "Armes pour les Naufrageurs",
       origine: "hautegarde", destination: "criquenoire", item: "mousquets", quantite: 2, delaiJours: 9, etatMin: 60,
       recompense: 480, reputation: 15, prerequis: { quetes: ["q_rumeur_crique"] },
       texte: "Un officier corrompu vous confie des mousquets à livrer discrètement à la Crique Noire." },
 
-    { id: "q_epices_bal", type: "livraison", titre: "Des épices pour le bal",
+    { id: "q_epices_bal", type: "livraison", titre: "Des épices pour la Fête des Feux",
       origine: "vasque", destination: "hautegarde", item: "epices", quantite: 2, delaiJours: 7, etatMin: 80,
       recompense: 300, reputation: 12, prerequis: { quetes: ["q_premier_rhum"] },
-      texte: "Ravi de son rhum, le gouverneur de Hautegarde commande maintenant les épices du Comptoir de Vasque pour son banquet." },
+      texte: "Ravi de son rhum, le Grand Gardien commande maintenant les épices du Comptoir de Vasque pour le banquet de la Fête des Feux." },
 
     { id: "q_soie_robe", type: "livraison", titre: "Soie pour la robe",
       origine: "vasque", destination: "lunebaie", item: "soie", quantite: 2, delaiJours: 8, etatMin: 85,
@@ -460,7 +481,10 @@ window.CONFIG = {
 
   /* ------------------------------------------------------------------
      ÉVÉNEMENTS
-     icone / theme : illustration de la fenêtre ("orage", "mer", "danger", "autorite", "tresor")
+     icone / theme : illustration de la fenêtre ("orage", "mer", "danger", "autorite", "tresor", "fantome")
+     fantome       : true = navire fantôme (moins fréquent avec la lanterne bénie ou le pacte des Naufrageurs)
+     legende       : id de légende débloquée quand l'événement a lieu
+     condition     : "pageAlienor" = seulement s'il reste une page du journal d'Aliénor à trouver
      chanceParJour : probabilité de base par jour de trajet (multipliée par le danger de la route)
      nuitSeulement : true = seulement de nuit
      condition     : "contrebande" = seulement si la cale contient un item interdit chez cette faction (patrouille)
@@ -473,6 +497,7 @@ window.CONFIG = {
                      La réussite dépend alors de la compétence de ce marin (pas de toute la salle).
                      Le marin reste dans la salle si elle a de la place, sinon il y va le temps de la manœuvre.
        requiert    : type de salle nécessaire pour proposer ce choix (ex. "vigie")
+       requiertAmelio : id d'amélioration nécessaire pour proposer ce choix (ex. "lanterne")
        succes / echec : effets appliqués
      EFFETS possibles :
        coque (+/-), choc (intensité des dégâts aux fragiles), eau (intensité des dégâts d'eau),
@@ -481,7 +506,8 @@ window.CONFIG = {
        gagner: [idItem, quantité], blesse (santé perdue par un marin au hasard),
        inspection: id de faction (déclenche une inspection), texte (message affiché),
        eauCible / chocCible : comme eau / choc, mais seulement dans la salle ciblée,
-       blesseEnvoye : santé perdue par le marin envoyé, coqueCible : comme coque.
+       blesseEnvoye : santé perdue par le marin envoyé, coqueCible : comme coque,
+       legende : id de légende débloquée, ou "page" (prochaine page du journal d'Aliénor).
      Après un événement, un marin blessé peut être conduit à l'infirmerie (si le navire en a une).
      ------------------------------------------------------------------ */
   evenements: [
@@ -569,14 +595,14 @@ window.CONFIG = {
           echec:  { orPourcent: 40, texte: "Ils exigent bien plus que prévu." } }
       ] },
 
-    { id: "patrouille", titre: "Patrouille de la Couronne", icone: "⚓", theme: "autorite", chanceParJour: 0.08, condition: "contrebande", faction: "couronne",
-      texte: "Une frégate de la Couronne vous fait signe de mettre en panne pour une inspection.",
+    { id: "patrouille", titre: "Patrouille des Fanaux", icone: "⚓", theme: "autorite", chanceParJour: 0.08, condition: "contrebande", faction: "fanaux",
+      texte: "Une frégate des Fanaux, lanterne blanche au mât, vous fait signe de mettre en panne pour une inspection.",
       choix: [
         { texte: "Accepter l'inspection", test: null,
-          succes: { inspection: "couronne" } },
+          succes: { inspection: "fanaux" } },
         { texte: "Tenter de fuir", test: { competence: "navigation", base: 0.3, parPoint: 0.3 },
           succes: { texte: "Vous disparaissez dans la brume." },
-          echec:  { coque: -15, inspection: "couronne", texte: "Un boulet dans la coque vous force à vous arrêter." } }
+          echec:  { coque: -15, inspection: "fanaux", texte: "Un boulet dans la coque vous force à vous arrêter." } }
       ] },
 
     { id: "epave", titre: "Épave à la dérive", icone: "🛟", theme: "mer", chanceParJour: 0.05,
@@ -599,12 +625,50 @@ window.CONFIG = {
           echec:  { sante: -10, moral: -8, texte: "La fièvre se propage à tout l'équipage." } }
       ] },
 
+
+    // --- Le fantastique (voir "legendes") ---
+    { id: "amiral_os", titre: "La Dernière Marée", icone: "💀", theme: "fantome", chanceParJour: 0.03, nuitSeulement: true, fantome: true, legende: "amiral_os",
+      texte: "Un trois-mâts aux voiles en lambeaux sort de la brume. À la barre, un squelette en habit d'amiral soulève poliment son tricorne : « Le péage, je vous prie. En âmes ou en or. »",
+      choix: [
+        { texte: "Brandir la lanterne bénie", requiertAmelio: "lanterne", test: null,
+          succes: { moral: 8, texte: "Le Feu blanc aveugle l'équipage fantôme. La Dernière Marée vire de bord dans un long gémissement." } },
+        { texte: "Payer le péage", test: null,
+          succes: { orPourcent: 15, texte: "L'Amiral d'Os compte les pièces une à une, vous remercie, et s'efface dans la brume." } },
+        { texte: "Fuir à toutes voiles", test: { competence: "navigation", base: 0.35, parPoint: 0.3 },
+          succes: { texte: "Le vent tourne en votre faveur : la Dernière Marée disparaît derrière vous." },
+          echec:  { coque: -20, blesse: 20, moral: -12, texte: "Des mains d'os s'agrippent au bastingage avant que vous ne parveniez à vous dégager." } },
+        { texte: "Lui proposer une partie de dés", test: { competence: "commerce", base: 0.3, parPoint: 0.35 },
+          succes: { or: 60, moral: 8, texte: "L'Amiral perd avec élégance et vous laisse une bourse de pièces anciennes." },
+          echec:  { orPourcent: 25, moral: -6, texte: "L'Amiral triche, évidemment. Il repart avec un quart de votre or." } }
+      ] },
+
+    { id: "feux_verts", titre: "Des feux sur la côte", icone: "🟢", theme: "fantome", chanceParJour: 0.04, nuitSeulement: true, legende: "feux_morts",
+      texte: "Des lueurs vertes dansent sur une falaise, comme les feux d'un port. Les anciens marmonnent : ce sont les feux des Naufrageurs.",
+      choix: [
+        { texte: "Envoyer quelqu'un guetter les récifs", envoi: { salle: "pont", competence: "vigie" },
+          test: { competence: "vigie", base: 0.45, parPoint: 0.4 },
+          succes: { moral: 4, texte: "Votre vigie repère les brisants à temps. Vous passez au large des faux feux." },
+          echec:  { coque: -20, choc: 30, blesseEnvoye: 10, texte: "Le navire racle les récifs avant de se dégager." } },
+        { texte: "Faire un long détour (1 jour)", test: null,
+          succes: { jours: 1, texte: "Mieux vaut un jour de perdu qu'une coque éventrée." } }
+      ] },
+
+    { id: "perseverance", titre: "Une voile dans la Brume", icone: "👻", theme: "fantome", chanceParJour: 0.025, nuitSeulement: true, fantome: true, condition: "pageAlienor",
+      texte: "Une goélette pâle glisse sans bruit à la lisière de la Brume. Sur sa poupe, à peine lisible : « Persévérance ». Un équipage de spectres s'affaire en silence.",
+      choix: [
+        { texte: "La suivre et l'approcher", test: { competence: "navigation", base: 0.4, parPoint: 0.3 },
+          succes: { legende: "page", moral: -4, texte: "Le temps d'un battement de cœur, vous frôlez son bastingage. Une page de journal reste entre vos doigts." },
+          echec:  { jours: 1, moral: -8, texte: "Elle se dissout dans la brume. Vous perdez une journée à la chercher." } },
+        { texte: "Détourner les yeux et passer", test: null,
+          succes: { moral: -2, texte: "Personne à bord n'ose en parler." } }
+      ] },
+
     // --- Événement d'arrivée (déclenché par "evenementArrivee" d'une île) ---
     { id: "fouille_tresor", titre: "La croix du Pendu", icone: "💀", theme: "tresor", chanceParJour: 0,
       texte: "La carte indique un vieux gibet au sommet de l'île. L'équipage débarque avec des pelles.",
       choix: [
         { texte: "Creuser sous le gibet", test: { competence: "navigation", base: 0.55, parPoint: 0.25 },
-          succes: { gagner: ["coffre", 1], moral: 20, cohesion: 10, texte: "Les pelles heurtent du bois : un coffre plein d'or ! Il faut lui faire de la place dans la cale." },
+          succes: { gagner: ["coffre", 1], legende: "page", moral: 20, cohesion: 10, texte: "Les pelles heurtent du bois : un coffre plein d'or ! Sous le couvercle, une page de journal soigneusement pliée. Il faut faire de la place dans la cale." },
           echec:  { blesse: 25, moral: -10, texte: "Un éboulement ! Le coffre reste introuvable… pour cette fois." } },
         { texte: "Repartir, l'île est maudite", test: null, succes: { moral: -5, texte: "Les superstitieux soufflent de soulagement." } }
       ] }
@@ -638,23 +702,25 @@ window.CONFIG = {
      effet : "info" (texte seulement), "lettreDeMarque", "patrouilles" (x valeur), "contratsBonus" (x valeur),
              "coffrePartout", "boycott", "recrutement" (x valeur du prix), "vivres" (x valeur du prix),
              "pasDeRecrues", "marcheNoir" (x valeur du prix de vente), "pavillonAmi" (chance d'être épargné),
-             "pirates" (x valeur de la fréquence des navires hostiles)
+             "pirates" (x valeur de la fréquence des navires hostiles), "marquesOmbre" (x valeur de la chance
+             qu'un inspecteur trouve la contrebande), "delation" (x valeur de la chance d'inspection),
+             "feuxMorts" (x valeur de la fréquence des navires fantômes)
      ------------------------------------------------------------------ */
   factionsPaliers: [
-    { faction: "couronne",  seuil: 20,  effet: "info",            texte: "La goélette est en vente au chantier de Hautegarde" },
-    { faction: "couronne",  seuil: 40,  effet: "lettreDeMarque",  texte: "Lettre de marque : les patrouilles de la Couronne ne vous arrêtent plus" },
-    { faction: "couronne",  seuil: -30, effet: "patrouilles", valeur: 2, texte: "Patrouilles de la Couronne 2 fois plus fréquentes" },
-    { faction: "compagnie", seuil: 20,  effet: "contratsBonus", valeur: 1.25, texte: "Contrats au départ de ses comptoirs payés +25 %" },
-    { faction: "compagnie", seuil: 40,  effet: "coffrePartout",   texte: "Votre coffre est accessible dans tous les ports" },
-    { faction: "compagnie", seuil: -30, effet: "boycott",         texte: "Ses comptoirs refusent de commercer avec vous" },
-    { faction: "colonies",  seuil: 20,  effet: "recrutement", valeur: 0.5, texte: "Recrutement à moitié prix dans ses îles" },
-    { faction: "colonies",  seuil: 40,  effet: "vivres", valeur: 0.7, texte: "Vivres −30 % partout" },
-    { faction: "colonies",  seuil: -30, effet: "pasDeRecrues",    texte: "Plus personne ne veut embarquer dans ses îles" },
-    { faction: "confrerie", seuil: 20,  effet: "marcheNoir", valeur: 1.2, texte: "La contrebande se revend +20 %" },
-    { faction: "confrerie", seuil: 40,  effet: "pavillonAmi", valeur: 0.5, texte: "Pavillon ami : une chance sur deux qu'un navire pirate vous laisse passer" },
-    { faction: "confrerie", seuil: -30, effet: "pirates", valeur: 1.5, texte: "Les navires pirates vous cherchent : rencontres ×1,5" }
+    { faction: "fanaux",      seuil: 20,  effet: "info",            texte: "La goélette est en vente au chantier de Hautegarde" },
+    { faction: "fanaux",      seuil: 40,  effet: "lettreDeMarque",  texte: "Sauf-conduit des Fanaux : leurs patrouilles ne vous arrêtent plus" },
+    { faction: "fanaux",      seuil: -30, effet: "patrouilles", valeur: 2, texte: "Patrouilles des Fanaux 2 fois plus fréquentes" },
+    { faction: "couronne",    seuil: 20,  effet: "contratsBonus", valeur: 1.25, texte: "Contrats au départ de ses ports payés +25 %" },
+    { faction: "couronne",    seuil: 40,  effet: "coffrePartout",   texte: "Lettres de change royales : votre coffre est accessible dans tous les ports" },
+    { faction: "couronne",    seuil: -30, effet: "boycott",         texte: "Ses ports refusent de commercer avec vous" },
+    { faction: "etoile",      seuil: 20,  effet: "marcheNoir", valeur: 1.2, texte: "Les receleurs rachètent la contrebande +20 %" },
+    { faction: "etoile",      seuil: 40,  effet: "marquesOmbre", valeur: 0.5, texte: "Marques d'ombre : les inspecteurs trouvent deux fois moins votre contrebande" },
+    { faction: "etoile",      seuil: -30, effet: "delation", valeur: 1.5, texte: "L'Étoile Noire vous dénonce : inspections ×1,5" },
+    { faction: "naufrageurs", seuil: 20,  effet: "pavillonAmi", valeur: 0.5, texte: "Pavillon ami : une chance sur deux qu'un navire pirate vous laisse passer" },
+    { faction: "naufrageurs", seuil: 40,  effet: "feuxMorts", valeur: 0.5, texte: "Pacte des feux morts : deux fois moins de navires fantômes" },
+    { faction: "naufrageurs", seuil: -30, effet: "pirates", valeur: 1.5, texte: "Les navires pirates vous cherchent : rencontres ×1,5" }
   ],
-  rivalites: { taux: 0.25, paires: [["couronne", "confrerie"], ["compagnie", "colonies"]] }, // un gain chez l'une retire 25 % de ce gain chez l'autre
+  rivalites: { taux: 0.25, paires: [["fanaux", "naufrageurs"], ["couronne", "etoile"]] }, // un gain chez l'une retire 25 % de ce gain chez l'autre
 
   /* ------------------------------------------------------------------
      MÉFIANCE (par faction, de 0 à 100) : niveaux et effets
@@ -689,17 +755,19 @@ window.CONFIG = {
       { id: "vagues",   nom: "Vagues", couleurs: ["#2f5d9e", "#fbeed0"] },
       { id: "soleil",   nom: "Soleil", couleurs: ["#e7b92f", "#8a2f2f"] },
       { id: "etoile",   nom: "Étoile", couleurs: ["#7a3e6e", "#e7c977"] },
-      { id: "crane",    nom: "Crâne", couleurs: ["#151515", "#eeeeee"] }
+      { id: "crane",    nom: "Crâne", couleurs: ["#151515", "#eeeeee"] },
+      { id: "brume",    nom: "Brume", couleurs: ["#3f7a6f", "#d9e6df"] }
     ]
   },
 
   /* ------------------------------------------------------------------
-     JALONS (conservés d'une génération à l'autre)
+     JALONS (conservés même après un naufrage)
      condition : { type, valeur }
        "stat"           : statistique de la partie ("livraisons", "livraisonsATemps", "livraisonsParfaites",
                           "ventesOr", "joursMer", "mouillages", "inspectionsEchappees", "tresors", "naufrages") ; champ "stat"
        "ilesConnues", "toutesIles", "fortune" (or à bord + coffre), "navire" (champ "navire"),
        "equipageComplet", "generation", "palier" (champ "palier" : une île à ce palier)
+     Statistiques liées aux légendes : "legendes" (légendes découvertes), "pagesAlienor"
      recompense : { or, couleur, pavillon, titre }
      ------------------------------------------------------------------ */
   jalons: [
@@ -718,7 +786,9 @@ window.CONFIG = {
     { id: "notable",         nom: "Notable", description: "Devenir Notable sur une île.", condition: { type: "palier", palier: "notable" }, recompense: { titre: "Notable de l'archipel" } },
     { id: "chasseur",        nom: "Chasseur de trésor", description: "Déterrer un coffre au trésor.", condition: { type: "stat", stat: "tresors", valeur: 1 }, recompense: { titre: "Chasseur de trésor", couleur: "ebene", or: 100 } },
     { id: "survivant",       nom: "Survivant", description: "Survivre à un naufrage.", condition: { type: "stat", stat: "naufrages", valeur: 1 }, recompense: { titre: "Rescapé" } },
-    { id: "dynastie",        nom: "Dynastie", description: "Atteindre la 3e génération de capitaines.", condition: { type: "generation", valeur: 3 }, recompense: { titre: "Dynastie des mers" } }
+    { id: "dynastie",        nom: "Revenant des mers", description: "Survivre à 3 naufrages.", condition: { type: "stat", stat: "naufrages", valeur: 3 }, recompense: { titre: "Revenant des mers" } },
+    { id: "conteur",         nom: "Conteur", description: "Découvrir 12 légendes.", condition: { type: "stat", stat: "legendes", valeur: 12 }, recompense: { titre: "Conteur des Hauts-Fonds", pavillon: "brume" } },
+    { id: "journal_alienor", nom: "Sur la trace d'Aliénor", description: "Retrouver les 3 pages du journal d'Aliénor Corvelle.", condition: { type: "stat", stat: "pagesAlienor", valeur: 3 }, recompense: { titre: "Chercheur de Brume", or: 150 } }
   ],
 
   /* ------------------------------------------------------------------
@@ -730,7 +800,7 @@ window.CONFIG = {
     duree: [5, 8],                 // durée en jours
     penurie: 1.8,                  // multiplicateur de prix pendant une pénurie
     abondance: 0.55,               // multiplicateur de prix pendant une abondance
-    items: ["sucre", "rhum", "tabac", "epices", "soie", "porcelaine", "bois", "poisson", "poudre", "mousquets", "fruitsvente"]
+    items: ["sucre", "rhum", "tabac", "epices", "soie", "porcelaine", "bois", "poisson", "poudre", "mousquets", "fruitsvente", "sel"]
   },
   rumeurs: {
     prix: 5,                       // prix d'un verre à la taverne
@@ -763,10 +833,83 @@ window.CONFIG = {
      etapes : { quete: id } ou { stat: id, valeur, texte } (étape réussie quand la statistique est atteinte)
      ------------------------------------------------------------------ */
   chaines: [
-    { id: "gouverneur", titre: "Les affaires du gouverneur", etapes: [{ quete: "q_premier_rhum" }, { quete: "q_epices_bal" }] },
+    { id: "gouverneur", titre: "Les caprices du Grand Gardien", etapes: [{ quete: "q_premier_rhum" }, { quete: "q_epices_bal" }] },
     { id: "mariage",    titre: "Le mariage de Lunebaie",     etapes: [{ quete: "q_porcelaine" }, { quete: "q_soie_robe" }] },
-    { id: "confrerie",  titre: "Les secrets de la Confrérie", etapes: [{ quete: "q_rumeur_crique" }, { quete: "q_mousquets" }] },
+    { id: "confrerie",  titre: "Les secrets des Naufrageurs", etapes: [{ quete: "q_rumeur_crique" }, { quete: "q_mousquets" }] },
     { id: "pendu",      titre: "Le trésor du Pendu",          etapes: [{ quete: "q_rumeur_crique" }, { quete: "q_carte_pendu" }, { stat: "tresors", valeur: 1, texte: "Déterrer le coffre sur l'Île du Pendu" }] }
+  ],
+
+  /* ------------------------------------------------------------------
+     MONDE ET LÉGENDES (voir la Bible de l'univers)
+     intro : texte de la fenêtre d'ouverture d'une nouvelle partie
+     legendes : entrées de l'onglet Quêtes > Légendes
+       categorie : "monde", "factions", "personnages", "journal"
+       depart    : true = connue dès le début
+       ile       : débloquée à la première arrivée sur cette île
+       taverne   : racontée par les vieux marins de cette île (bouton à la taverne)
+       (une légende peut aussi être débloquée par un événement : champ "legende" des événements)
+       page      : numéro de page du journal d'Aliénor (trouvées dans l'ordre)
+     ------------------------------------------------------------------ */
+  monde: {
+    annee: 312,
+    intro: "An 312 du Fanal. Personne n'a jamais vu de continent : la Brume sépare les archipels depuis des siècles. Il y a douze ans, elle a commencé à s'estomper, et l'on parle déjà de passages vers d'autres archipels. Dans les Hauts-Fonds de Sel, les Fanaux font la loi, la Couronne tient le sel, l'Étoile Noire tient la pègre et les Naufrageurs allument leurs faux feux. Vous n'êtes qu'un petit marchand, avec un vieux cotre et trois marins. Enrichissez-vous… et ouvrez l'oreille : dans les tavernes, les légendes mènent aux trésors."
+  },
+  categoriesLegendes: [
+    { id: "monde", nom: "Le monde", icone: "🌫️" },
+    { id: "factions", nom: "Factions", icone: "⚑" },
+    { id: "personnages", nom: "Personnages", icone: "👤" },
+    { id: "journal", nom: "Journal d'Aliénor", icone: "📓" }
+  ],
+  legendes: [
+    { id: "brume", categorie: "monde", titre: "La Brume", depart: true,
+      texte: "Personne n'a jamais vu de continent. Des murs de brouillard séparent les archipels depuis des siècles. Chaque archipel a vécu seul, avec ses peuples, ses pouvoirs et ses légendes. Les navires qui entrent dans la Brume reviennent rarement." },
+    { id: "reflux", categorie: "monde", titre: "Le Reflux", depart: true,
+      texte: "Il y a douze ans, la Brume a commencé à s'estomper par endroits. Des passages s'ouvrent vers d'autres archipels, peuplés depuis toujours. Le premier se dessine au sud des Hauts-Fonds de Sel, et toutes les factions veulent être les premières à le traverser." },
+    { id: "hautsfonds", categorie: "monde", titre: "Les Hauts-Fonds de Sel", depart: true,
+      texte: "Un archipel de bancs de sable, de lagunes et de marais salants. Au nord, les eaux profondes et les phares ; au centre, les salines ; au sud, la Lisière, au bord de la Brume. Le sel est partout, et qui tient le sel tient le commerce." },
+    { id: "feu_blanc", categorie: "monde", titre: "Le premier fanal", taverne: "hautegarde",
+      texte: "En l'an 0, une gardienne alluma un feu blanc sur le rocher de Hautegarde. Les navires fantômes qui rôdaient s'enfuirent. On compte les années depuis ce jour : nous sommes en l'an 312 du Fanal." },
+    { id: "sel_morts", categorie: "monde", titre: "Pourquoi le sel vaut si cher", taverne: "vasque",
+      texte: "Parce qu'il brûle les morts. Un cercle de sel autour d'un hamac, et aucun noyé ne vient vous tirer par les pieds. Les marins avisés gardent toujours un sac de sel à bord." },
+    { id: "equipages_fond", categorie: "monde", titre: "Les Équipages du Fond", taverne: "sternes",
+      texte: "Ceux qui meurent en mer dérivent dans la Brume. Les plus féroces gardent leur navire et leur équipage : ce sont les Équipages du Fond. Depuis le Reflux, on les croise de plus en plus souvent, la nuit." },
+    { id: "gibet", categorie: "monde", titre: "Le gibet du sud", taverne: "criquenoire",
+      texte: "Sur une île au sud, longtemps noyée dans la Brume, un gibet se dresse au sommet d'une colline. Personne ne sait qui l'a construit. Un naufrageur jure qu'un coffre dort sous ses pieds… et qu'une page du journal d'Aliénor l'accompagne." },
+    { id: "feux_morts", categorie: "monde", titre: "Les feux morts",
+      texte: "Les feux verts des Naufrageurs ne trompent pas que les vivants : ils appellent aussi les noyés. Quand un navire s'éventre sur les récifs, ses marins rejoignent la Brume… et parfois l'équipage de ceux qui les ont attirés." },
+    { id: "batisseurs", categorie: "monde", titre: "Les Bâtisseurs", ile: "pendu",
+      texte: "Des ruines de pierre plus anciennes que le premier fanal. Leurs gravures montrent des navires qu'aucun chantier connu ne sait construire. Qui étaient les Bâtisseurs, et que fuyaient-ils ?" },
+
+    { id: "l_fanaux", categorie: "factions", titre: "L'Ordre des Fanaux", ile: "hautegarde",
+      texte: "Ils ont allumé le premier feu, et les marins leur doivent la vie. Avec le temps, ils sont devenus juges et percepteurs : naviguer sans leurs cartes est illégal. Leur Feu blanc aveugle les morts. Ils veulent être les premiers à cartographier les passages du Reflux." },
+    { id: "l_couronne", categorie: "factions", titre: "La Couronne", ile: "vasque",
+      texte: "Il y a un siècle, le plus riche des sauniers s'est fait couronner roi des Salines. Ses héritiers fixent le prix du sel, lèvent les taxes et traquent le faux-sel. Leur Sel scellé lie les contrats : rompre un serment royal porte malheur." },
+    { id: "l_etoile", categorie: "factions", titre: "L'Étoile Noire", ile: "lunebaie",
+      texte: "Quand la Couronne a pris le monopole du sel, les sauniers indépendants ont choisi la contrebande. Leurs descendants tiennent la pègre de chaque port : receleurs, faussaires, douaniers achetés. Une étoile noire gravée sous un comptoir signifie qu'on peut parler librement." },
+    { id: "l_naufrageurs", categorie: "factions", titre: "Les Naufrageurs", ile: "criquenoire",
+      texte: "D'anciens marins ruinés par les taxes des Fanaux. Ils allument des feux verts sur les falaises pour attirer les navires sur les récifs, puis pillent les épaves. On dit qu'ils ont des arrangements avec les noyés." },
+
+    { id: "ambroise", categorie: "personnages", titre: "Ambroise Lumen, le Grand Gardien", ile: "hautegarde",
+      texte: "Aveugle depuis cinquante ans, il dit voir les morts mieux que les vivants, et les gronde comme des enfants désobéissants. Il a un faible pour le rhum de Lunebaie, interdit dans sa propre ville." },
+    { id: "petronille", categorie: "personnages", titre: "Pétronille III, la Reine du Sel", ile: "vasque",
+      texte: "Elle trône sur un siège de sel taillé et fait peser chaque visiteur avant de parler affaires. Elle n'oublie aucune dette, et prête volontiers… à des taux redoutables." },
+    { id: "seraphin", categorie: "personnages", titre: "Séraphin Minuit, le Prince des Quais", ile: "lunebaie",
+      texte: "Perruque poudrée, étoile noire tatouée sous l'œil. Il connaît le prix de chaque douanier et ne montre jamais ses deux mains à la fois. Ses faveurs se paient toujours plus tard." },
+    { id: "gaspard", categorie: "personnages", titre: "Gaspard Lanterne-Verte", ile: "criquenoire",
+      texte: "Le chef des Naufrageurs porte à la ceinture une lanterne où brûle l'âme de son ancien capitaine. Les deux se disputent sans cesse, surtout sur le partage du butin." },
+    { id: "coquille", categorie: "personnages", titre: "Madame Coquille et Cap'taine", taverne: "lunebaie",
+      texte: "Madame Coquille vend les rumeurs de Lunebaie. Son perroquet, Cap'taine, a plus de cent ans et en sait plus qu'elle. Il ment une fois sur trois, et personne ne sait laquelle." },
+    { id: "alienor", categorie: "personnages", titre: "Aliénor Corvelle, la capitaine disparue", taverne: "lunebaie",
+      texte: "La capitaine la plus audacieuse de l'archipel. En 293, elle entra dans la Brume à bord de la Persévérance et ne revint jamais. Sept ans plus tard, la Brume commençait à s'estomper, exactement dans la direction qu'elle avait prise. Son journal, vendu page par page, circule encore." },
+    { id: "amiral_os", categorie: "personnages", titre: "L'Amiral d'Os", taverne: "criquenoire",
+      texte: "Il commande La Dernière Marée, un trois-mâts aux voiles en lambeaux. Squelette d'une politesse exquise, il réclame un péage en âmes ou en or. On dit qu'il adore les dés… et qu'il triche." },
+
+    { id: "page1", categorie: "journal", titre: "Page 1", page: 1,
+      texte: "« Jour 3 dans la Brume. Le compas tourne sur lui-même. Les hommes entendent chanter sous la coque. Je tiens le cap au sud-sud-est, d'après des étoiles qu'on ne voit pas. »" },
+    { id: "page2", categorie: "journal", titre: "Page 2", page: 2,
+      texte: "« Jour 9. Une tour, au milieu de l'eau, plus haute que le Grand Fanal. Il y a de la lumière tout en haut. Quelqu'un, ou quelque chose, nous attendait. »" },
+    { id: "page3", categorie: "journal", titre: "Page 3", page: 3,
+      texte: "« La Brume ne garde pas, elle attend que… » La phrase s'arrête là. Au dos, un relevé de cap, et une étoile dessinée à l'encre noire." }
   ],
 
   /* ------------------------------------------------------------------

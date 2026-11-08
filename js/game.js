@@ -11,7 +11,7 @@ const parId = (liste) => Object.fromEntries(liste.map((e) => [e.id, e]));
 const DB = {
   items: parId(C.items), iles: parId(C.iles), factions: parId(C.factions), navires: parId(C.navires),
   amelios: parId(C.ameliorations), roles: parId(C.roles.liste), marins: parId(C.marins), traits: parId(C.traits),
-  evts: parId(C.evenements), quetes: parId(C.quetes),
+  evts: parId(C.evenements), quetes: parId(C.quetes), legendes: parId(C.legendes),
   sallesTypes: parId(C.salles.types), typesCale: parId(C.typesCale)
 };
 const CLE_SAUVEGARDE = "psl-proto-sauvegarde-v1";
@@ -69,7 +69,8 @@ function nouvellePartie() {
     generation: 1,
     stats: {}, jalons: [], jalonsNonVus: 0,
     cosmetiques: { couleurs: [], pavillons: [], titres: [] }, apparence: { couleur: "modele", pavillon: "marchand" }, titre: null,
-    marche: [], rumeurs: [], bilan: null
+    marche: [], rumeurs: [], bilan: null,
+    monde: 2, legendes: C.legendes.filter((l) => l.depart).map((l) => l.id), legendesNonVues: 0
   };
   C.iles.forEach((i) => { S.reputation.iles[i.id] = 0; S.prixMod[i.id] = {}; });
   C.factions.forEach((f) => { S.reputation.factions[f.id] = 0; S.mefiance[f.id] = 0; });
@@ -77,7 +78,9 @@ function nouvellePartie() {
   placementConseille();
   d.cargaison.forEach(([id, n]) => { for (let k = 0; k < n; k++) { const it = creerItem(id); if (!placerAuto(it)) S.quai.push(it); } });
   genererOffres(S.ile);
-  journal("Nouvelle partie. Votre cotre est amarré à <b>" + esc(ileDep.nom) + "</b>.");
+  journal("An " + C.monde.annee + " du Fanal. Votre cotre est amarré à <b>" + esc(ileDep.nom) + "</b>.");
+  C.legendes.filter((l) => l.ile === d.ile).forEach((l) => S.legendes.push(l.id));
+  S.stats.legendes = S.legendes.length;
   sauver();
 }
 
@@ -102,6 +105,16 @@ function migrer() {
   S.stats = S.stats || {}; S.jalons = S.jalons || []; S.jalonsNonVus = S.jalonsNonVus || 0;
   S.cosmetiques = S.cosmetiques || { couleurs: [], pavillons: [], titres: [] }; S.apparence = S.apparence || { couleur: "modele", pavillon: "marchand" };
   if (S.titre === undefined) S.titre = null; S.marche = S.marche || []; S.rumeurs = S.rumeurs || []; if (S.bilan === undefined) S.bilan = null;
+  // 0.6.0 : refonte du monde (nouvelles factions, légendes)
+  if (!S.monde) {
+    const corresp = { couronne: "fanaux", compagnie: "couronne", colonies: "etoile", confrerie: "naufrageurs" };
+    const remap = (o) => { const n = {}; Object.keys(o || {}).forEach((k) => { n[corresp[k] || k] = o[k]; }); return n; };
+    S.reputation.factions = remap(S.reputation.factions); S.mefiance = remap(S.mefiance);
+    S.monde = 2;
+  }
+  C.factions.forEach((f) => { if (S.reputation.factions[f.id] === undefined) S.reputation.factions[f.id] = 0; if (S.mefiance[f.id] === undefined) S.mefiance[f.id] = 0; });
+  if (!S.legendes) { S.legendes = C.legendes.filter((l) => l.depart || (l.ile && S.evtArriveeFaits.concat([S.ile]).includes(l.ile))).map((l) => l.id); S.legendesNonVues = 0; }
+  S.legendes = S.legendes.filter((id) => DB.legendes[id]); S.stats.legendes = S.legendes.length;
   S.cale.forEach((it) => { if (!it.cale || !salleDef(it.cale) || !salleDef(it.cale).cale) it.cale = calePrincipale(); });
   verifierPlacement();
 }
@@ -355,6 +368,7 @@ function effetsFactionActifs(fid) { const v = S.reputation.factions[fid] || 0; r
 function effetFaction(fid, effet) { return effetsFactionActifs(fid).find((p) => p.effet === effet) || null; }
 function valeurFaction(fid, effet, def) { const e = effetFaction(fid, effet); return e ? (e.valeur !== undefined ? e.valeur : true) : def; }
 function effetQuelconque(effet) { for (const f of C.factions) { const e = effetFaction(f.id, effet); if (e) return e; } return null; }
+function valeurQuelconque(effet, def) { const e = effetQuelconque(effet); return e ? (e.valeur !== undefined ? e.valeur : def) : def; }
 function rivale(fid) { const p = C.rivalites.paires.find((x) => x.includes(fid)); return p ? p.find((x) => x !== fid) : null; }
 function niveauMefiance(fid) { let n = C.mefiance.niveaux[0]; C.mefiance.niveaux.forEach((x) => { if ((S.mefiance[fid] || 0) >= x.min) n = x; }); return n; }
 function changerRep(ileId, v) {
@@ -415,10 +429,29 @@ async function ecouterRumeur() {
   if (!e) return;
   const r = { ref: e.id, ile: e.ile, item: e.item, type: e.type, debut: e.debut, fin: e.fin, vraie, jour: S.temps, statut: null };
   S.rumeurs.unshift(r); S.rumeurs = S.rumeurs.slice(0, 12);
-  const qui = choisir(["Un vieux marin jure que", "La serveuse a entendu dire que", "Un capitaine de la Compagnie raconte que", "Un pêcheur éméché affirme que"]);
+  const qui = choisir(["Un vieux marin jure que", "La serveuse a entendu dire que", "Un douanier de la Couronne raconte que", "Un pêcheur éméché affirme que", "Cap'taine, le vieux perroquet, croasse que", "Un homme à l'étoile tatouée murmure que"]);
   journal("👂 Rumeur : " + esc(texteRumeur(r)));
   rendreTout(); sauver();
   await modale({ titre: "Rumeur de taverne", icone: "🍺", theme: "tresor", html: "<p><i>" + esc(qui) + "…</i></p><p><b>" + esc(texteRumeur(r)) + "</b></p><p class='muted'>" + esc(statutRumeur(r)[1]) + ". Les rumeurs ne sont pas toujours vraies : un bon négociant au poste de capitaine en entend de plus fiables.</p>", boutons: [{ t: "Noter dans le journal", primaire: true }] });
+}
+
+/* ---------------- Légendes ---------------- */
+function prochainePage() { return C.legendes.filter((l) => l.page && !S.legendes.includes(l.id)).sort((a, b) => a.page - b.page)[0] || null; }
+function debloquerLegende(id, discret) {
+  const l = id === "page" ? prochainePage() : DB.legendes[id];
+  if (!l || S.legendes.includes(l.id)) return null;
+  S.legendes.push(l.id); S.legendesNonVues = (S.legendesNonVues || 0) + 1; S.stats.legendes = S.legendes.length; if (l.page) stat("pagesAlienor");
+  journal("📖 Légende découverte : <b>" + esc(l.titre) + "</b>.");
+  if (!discret) toast("📖 Nouvelle légende : " + l.titre);
+  planifierJalons();
+  return l;
+}
+function legendesTaverne(ileId) { return C.legendes.filter((l) => l.taverne === ileId && !S.legendes.includes(l.id)); }
+async function ecouterLegende() {
+  const i = ileAct(); if (!i) return; const l = legendesTaverne(i.id)[0]; if (!l) return;
+  debloquerLegende(l.id, true); rendreTout(); sauver();
+  const qui = choisir(["Un vieux marin édenté se penche vers vous", "Une matelote aux bras tatoués baisse la voix", "Le tavernier essuie un verre et raconte", "Un pêcheur aveugle tend la main vers le feu"]);
+  await modale({ titre: l.titre, icone: "📖", theme: "fantome", html: "<p><i>" + esc(qui) + "…</i></p><p>" + esc(l.texte) + "</p><p class='muted'>Retrouvez toutes les légendes dans l'onglet Quêtes.</p>", boutons: [{ t: "Merci, l'ancien", primaire: true }] });
 }
 
 /* ---------------- Note d'arrimage ---------------- */
@@ -514,11 +547,11 @@ function prixMarche(ileId, itemId) {
   return p * (S.prixMod[ileId][itemId] || 1) * multMarche(ileId, itemId);
 }
 function prixAchat(ileId, itemId) {
-  const vivres = DB.items[itemId].rations ? (valeurFaction("colonies", "vivres", 1) === true ? 1 : valeurFaction("colonies", "vivres", 1)) : 1;
+  const vivres = DB.items[itemId].rations ? valeurQuelconque("vivres", 1) : 1;
   return Math.max(1, arr(prixMarche(ileId, itemId) * C.commerce.margeAchat * (1 - Math.min(0.3, C.commerce.bonusCommerce * competence("commerce"))) * effetPalier(ileId, "prix", 1) * vivres));
 }
 function prixVente(ileId, it) {
-  const noir = estInterdit(it.id, ileId) ? valeurFaction("confrerie", "marcheNoir", 1) : 1;
+  const noir = estInterdit(it.id, ileId) ? valeurQuelconque("marcheNoir", 1) : 1;
   return Math.max(0, arr(prixMarche(ileId, it.id) * C.commerce.margeVente * (it.etat / 100) * (1 + C.commerce.bonusCommerce * competence("commerce")) / effetPalier(ileId, "prix", 1) * (noir === true ? 1 : noir)));
 }
 function bougerPrix(ileId, itemId, sens) { const m = S.prixMod[ileId]; m[itemId] = clamp((m[itemId] || 1) * (1 + sens * C.commerce.elasticite), 0.4, 2.5); }
@@ -766,11 +799,12 @@ function contrebandeFaction(fid) { const ids = new Set(C.iles.filter((i) => i.fa
 function cibleDisponible(e) { return !e.cible || (e.cible === "cale" ? cales().length > 0 : sallesNavire().some((s) => s.type === e.cible)); }
 function tirerEvenement() {
   const v = S.voyage; const danger = (dangerPoint(v.de) + dangerPoint(v.vers)) / 2;
-  const possibles = C.evenements.filter((e) => e.chanceParJour > 0 && (!e.nuitSeulement || estNuit()) && (e.condition !== "contrebande" || contrebandeFaction(e.faction).length) && cibleDisponible(e) && !(e.faction && effetFaction(e.faction, "lettreDeMarque")));
+  const possibles = C.evenements.filter((e) => e.chanceParJour > 0 && (!e.nuitSeulement || estNuit()) && (e.condition !== "contrebande" || contrebandeFaction(e.faction).length) && cibleDisponible(e) && !(e.faction && effetFaction(e.faction, "lettreDeMarque")) && (e.condition !== "pageAlienor" || prochainePage()));
   const poids = (e) => {
     let w = e.chanceParJour;
     if (e.id === "patrouille" && e.faction) { const p = valeurFaction(e.faction, "patrouilles", 1); w *= (p === true ? 1 : p) * (niveauMefiance(e.faction).patrouilles || 1); }
-    if (e.id === "hostile") { const p = valeurFaction("confrerie", "pirates", 1); w *= p === true ? 1 : p; }
+    if (e.id === "hostile") w *= valeurQuelconque("pirates", 1);
+    if (e.fantome) w *= valeurQuelconque("feuxMorts", 1) * (aAmelio("lanterne") ? DB.amelios.lanterne.fantomes : 1);
     return w;
   };
   const total = possibles.reduce((s, e) => s + poids(e), 0); const base = possibles.reduce((s, e) => s + e.chanceParJour, 0);
@@ -779,10 +813,10 @@ function tirerEvenement() {
   let r = Math.random() * total;
   for (const e of possibles) {
     r -= poids(e); if (r > 0) continue;
-    const ami = valeurFaction("confrerie", "pavillonAmi", 0);
-    if (e.id === "hostile" && ami && Math.random() < (ami === true ? 0.5 : ami)) {
+    const ami = valeurQuelconque("pavillonAmi", 0);
+    if (e.id === "hostile" && ami && Math.random() < ami) {
       journal("🏴‍☠️ Un navire pirate reconnaît votre pavillon et vous laisse passer.");
-      modale({ titre: "Pavillon ami", icone: "🏴‍☠️", theme: "tresor", html: "<p>Un navire de la Confrérie s'approche… puis vous salue d'un coup de canon à blanc. Vos amitiés vous protègent.</p>", boutons: [{ t: "Saluer en retour", primaire: true }] });
+      modale({ titre: "Pavillon ami", icone: "🏴‍☠️", theme: "tresor", html: "<p>Un navire des Naufrageurs s'approche… puis vous salue d'un coup de canon à blanc. Vos amitiés vous protègent.</p>", boutons: [{ t: "Saluer en retour", primaire: true }] });
       return;
     }
     lancerEvenement(e); return;
@@ -810,7 +844,7 @@ async function lancerEvenement(e) {
   if (e.cible === "cale") ctx.cible = choisir(cales()).id;
   else if (e.cible) { const s = sallesNavire().find((x) => x.type === e.cible); ctx.cible = s ? s.id : null; }
   const txt = (t) => String(t || "").split("{salle}").join(ctx.cible ? nomSalle(salleDef(ctx.cible)) : "la cale");
-  const options = e.choix.filter((c) => !c.requiert || sallesNavire().some((s) => s.type === c.requiert));
+  const options = e.choix.filter((c) => (!c.requiert || sallesNavire().some((s) => s.type === c.requiert)) && (!c.requiertAmelio || S.navire.amelios.includes(c.requiertAmelio)));
   let c = null, marin = null;
   while (!c) {
     const idx = await modale({ titre: e.titre, icone: e.icone || "❗", theme: e.theme || "mer", html: "<p>" + esc(txt(e.texte)) + "</p>",
@@ -834,6 +868,7 @@ async function lancerEvenement(e) {
   lignes.push(...await appliquerEffets(eff, ctx, marin));
   journal("<b>" + esc(e.titre) + "</b> — " + esc(txt(c.texte)) + (marin ? " (" + esc(marin.nom) + ")" : "") + " : " + (ok ? "réussite" : "échec") + ".");
   if (eff.texte || lignes.length) await modale({ titre: c.test ? (ok ? "Réussite !" : "Échec…") : e.titre, icone: c.test ? (ok ? "✅" : "❌") : (e.icone || "⚓"), theme: c.test ? (ok ? "succes" : "echec") : (e.theme || "mer"), html: (marin ? portraitSvg(marin.portrait, 44) : "") + (eff.texte ? "<p>" + esc(txt(eff.texte)) + "</p>" : ""), chips: lignes, boutons: [{ t: "Continuer", primaire: true }] });
+  if (e.legende) debloquerLegende(e.legende);
   verifierEquipage();
   if (S.navire.coque <= 0) { await naufrage(); return; }
   await proposerInfirmerie(ctx.blesses);
@@ -883,6 +918,7 @@ async function appliquerEffets(e, ctx, marin) {
   }
   if (e.blesse && S.equipage.length) { const m = choisir(S.equipage); m.sante -= e.blesse; ctx.blesses.push(m); L.push(m.nom + " : blessure, santé −" + e.blesse); }
   if (e.blesseEnvoye && marin) { marin.sante -= e.blesseEnvoye; ctx.blesses.push(marin); L.push(marin.nom + " : blessure, santé −" + e.blesseEnvoye); }
+  if (e.legende) { const l = debloquerLegende(e.legende, true); if (l) L.push("📖 Légende : " + l.titre); }
   if (e.inspection) await inspection(e.inspection, null, true);
   return L;
 }
@@ -924,6 +960,7 @@ async function inspection(fid, ileId, certaine) {
     if (nm.inspection !== "systematique" && ip !== "systematique") {
       ch = i.surveillance * nm.inspection * ip * (1 - Math.min(0.6, C.contrebande.bonusCommerce * competence("commerce")));
       if (estNuit()) ch *= C.contrebande.nuitInspection;
+      ch *= valeurQuelconque("delation", 1);
     }
     if (Math.random() > ch) { stat("inspectionsEchappees"); return; }
   }
@@ -937,7 +974,8 @@ async function inspection(fid, ileId, certaine) {
   }
   const bonusTrait = S.equipage.reduce((s, m) => s + m.traits.reduce((a, t) => a + (DB.traits[t].cachette || 0), 0), 0);
   const fouille = niveauMefiance(fid).cachette || 1;
-  const trouves = suspects.filter((it) => Math.random() > clamp(discretionItem(it) * fouille + bonusTrait, 0, 0.98));
+  const ombre = valeurQuelconque("marquesOmbre", 1); // < 1 : les inspecteurs trouvent moins
+  const trouves = suspects.filter((it) => Math.random() < (1 - clamp(discretionItem(it) * fouille + bonusTrait, 0, 0.98)) * ombre);
   if (!trouves.length) { stat("inspectionsEchappees"); await modale({ titre: "Ouf !", icone: "😮‍💨", theme: "succes", html: "<p>Les inspecteurs repartent bredouilles.</p>", boutons: [{ t: "Continuer", primaire: true }] }); return; }
   const valeur = trouves.reduce((s, it) => s + DB.items[it.id].prix, 0);
   const amende = Math.min(S.or, arr(valeur * C.contrebande.amendeParValeur * f.severite));
@@ -972,6 +1010,7 @@ async function arriver() {
   // Désertion
   for (const m of [...S.equipage]) if (S.equipage.length > 1 && m.moral < C.equipage.desertionSousMoral && Math.random() < C.equipage.chanceDesertion) { S.equipage = S.equipage.filter((x) => x !== m); journal("<b>" + esc(m.nom) + " a déserté.</b>"); toast(m.nom + " a déserté !"); }
   await montrerBilan(i);
+  C.legendes.filter((l) => l.ile === i.id).forEach((l) => debloquerLegende(l.id));
   genererOffres(i.id);
   verifierEquipage(); sauver(); rendreTout(); verifierJalons();
 }
@@ -994,9 +1033,9 @@ async function naufrage() {
   S.generation++; S.cohesion = 50; stat("naufrages"); S.bilan = null;
   for (let k = 0; k < nf.rations[1]; k++) { const it = creerItem(nf.rations[0]); placerAuto(it); }
   genererOffres(refuge);
-  journal("<b>Naufrage !</b> " + esc(survivant.nom) + " est le seul survivant et reprend la mer sur une barque. Génération " + S.generation + ".");
+  journal("<b>Naufrage !</b> " + esc(survivant.nom) + " est le seul survivant et reprend la mer sur une barque.");
   enPause = true; sauver(); rendreTout(); afficherPanneau("p-port");
-  await modale({ titre: "Naufrage", icone: "🌊", theme: "echec", html: "<p>Le navire sombre corps et biens. Seul <b>" + esc(survivant.nom) + "</b> s'en sort, accroché à une épave, et finit par atteindre <b>" + esc(DB.iles[refuge].nom) + "</b>.</p><ul><li>Navire, cargaison et or à bord : perdus</li><li>Carte découverte : conservée</li><li>Réputation : " + pct(nf.reputationConservee) + " conservée</li><li>Coffre à terre : " + S.coffre + " or</li></ul><p>" + esc(survivant.nom) + " devient capitaine d'une barque. L'héritage continue…</p>", boutons: [{ t: "Reprendre la mer", primaire: true }] });
+  await modale({ titre: "Naufrage", icone: "🌊", theme: "echec", html: "<p>Le navire sombre corps et biens. Seul <b>" + esc(survivant.nom) + "</b> s'en sort, accroché à une épave, et finit par atteindre <b>" + esc(DB.iles[refuge].nom) + "</b>.</p><ul><li>Navire, cargaison et or à bord : perdus</li><li>Carte découverte : conservée</li><li>Réputation : " + pct(nf.reputationConservee) + " conservée</li><li>Coffre à terre : " + S.coffre + " or</li></ul><p>" + esc(survivant.nom) + " devient capitaine d'une barque. L'aventure continue…</p>", boutons: [{ t: "Reprendre la mer", primaire: true }] });
 }
 
 /* ---------------- Services du port ---------------- */
@@ -1031,7 +1070,7 @@ function navireAutorise(n) { return !n.requiert || (S.reputation.factions[n.requ
 function reprise() { return arr(navire().prix * 0.5); }
 async function acheterNavire(id) {
   const n = DB.navires[id]; const cout = n.prix - reprise(); if (S.or < cout) return toast("Pas assez d'or.");
-  if (!navireAutorise(n)) return toast("La " + DB.factions[n.requiert.faction].nom + " doit vous estimer davantage.");
+  if (!navireAutorise(n)) return toast("Réputation insuffisante auprès de : " + DB.factions[n.requiert.faction].nom + ".");
   const r = await modale({ titre: "Changer de navire", icone: "⛵", html: "<p>Acheter une <b>" + esc(n.nom) + "</b> pour " + cout + " or (reprise de votre " + esc(navire().nom) + " déduite) ?</p><p class='muted'>Les améliorations sont perdues. La cargaison est déposée sur le quai : rangez-la dans les nouvelles cales. L'équipage est réparti dans les salles du nouveau navire.</p>", boutons: [{ t: "Acheter", primaire: true }, { t: "Annuler" }] });
   if (r !== 0) return;
   S.or -= cout; S.cale.forEach((it) => { it.x = -1; it.y = -1; it.cale = null; S.quai.push(it); }); S.cale = [];
@@ -1126,8 +1165,8 @@ function rendreHaut() {
 function regler(v) { if (v === "p") enPause = !enPause; else { vitesseIdx = +v; enPause = false; } rendreHaut(); majVoyage(); }
 function rendreOnglets() {
   const bq = document.querySelector("#onglets button[data-p='p-quetes']");
-  if (bq) { const n = S.jalonsNonVus || 0; let pq = bq.querySelector(".pastille"); if (n && !pq) { pq = document.createElement("i"); pq.className = "pastille"; bq.appendChild(pq); } if (pq) { if (n) pq.textContent = n; else pq.remove(); } }
-  const btnPC = $("#btnQuetesPC"); if (btnPC) btnPC.classList.toggle("nouveau", !!S.jalonsNonVus);
+  if (bq) { const n = (S.jalonsNonVus || 0) + (S.legendesNonVues || 0); let pq = bq.querySelector(".pastille"); if (n && !pq) { pq = document.createElement("i"); pq.className = "pastille"; bq.appendChild(pq); } if (pq) { if (n) pq.textContent = n; else pq.remove(); } }
+  const btnPC = $("#btnQuetesPC"); if (btnPC) btnPC.classList.toggle("nouveau", !!(S.jalonsNonVus || S.legendesNonVues));
   const b = document.querySelector("#onglets button[data-p='p-cale']"); if (!b) return;
   const n = S.quai.length; let p = b.querySelector(".pastille");
   if (n && !p) { p = document.createElement("i"); p.className = "pastille"; b.appendChild(p); }
@@ -1182,7 +1221,8 @@ function lieuxDe(i) {
   if (i.marche) L.push({ id: "marche", ic: "⚖️", t: "Marché", s: marcheOuvert(i.id) ? (S.marche.some((e) => e.ile === i.id && e.debut <= S.temps && S.temps <= e.fin) ? "📈 Les prix bougent !" : "Acheter et vendre") : "Boycott : marché fermé" });
   if (i.services.includes("reparation") || i.services.includes("chantier") || i.ameliorations.length) L.push({ id: "chantier", ic: "🔨", t: i.services.includes("chantier") ? "Chantier naval" : "Atelier", s: "Coque " + arr(S.navire.coque) + "/" + coqueMax(), badge: S.navire.coque < coqueMax() * 0.6 ? "!" : 0 });
   const tav = i.services.includes("taverne");
-  L.push({ id: "taverne", ic: tav ? "🍺" : "🔥", t: tav ? "Taverne" : "Bivouac", s: rum ? rum + " quête(s) à écouter" : tav ? "Rumeurs, repos, recrues" : "Se reposer", badge: rum, badgeOr: true });
+  const leg = tav ? legendesTaverne(i.id).length : 0;
+  L.push({ id: "taverne", ic: tav ? "🍺" : "🔥", t: tav ? "Taverne" : "Bivouac", s: rum ? rum + " quête(s) à écouter" : leg ? "📖 Une légende se raconte ici" : tav ? "Rumeurs, légendes, recrues" : "Se reposer", badge: rum + leg, badgeOr: true });
   if (i.services.includes("coffre") || (i.marche && effetQuelconque("coffrePartout"))) L.push({ id: "banque", ic: "🔒", t: "Coffre", s: S.coffre + " or à l'abri" });
   return L;
 }
@@ -1191,6 +1231,7 @@ function vueAccueil(i) {
   const f = DB.factions[i.faction]; const rep = S.reputation.iles[i.id] || 0;
   let h = "<div class='banniere'>" + banniereIle(i) + "<div class='nomIle'>" + esc(i.nom) + "</div></div>";
   h += "<div class='tags'><span class='tag' style='background:" + f.couleur + ";color:#fff'>" + esc(f.nom) + "</span><span class='tag'>" + (i.climat === "tropical" ? "🌴 Tropical" : "🌿 Tempéré") + "</span><span class='tag'>👁️ Surveillance " + niveau(i.surveillance) + "</span>" + tagPalier(rep) + "<span class='tag' style='background:" + niveauMefiance(i.faction).couleur + ";color:#fff'>👁️‍🗨️ " + esc(niveauMefiance(i.faction).nom) + "</span>" + (i.interdits.length ? "<span class='tag rouge'>⚠️ Interdit : " + i.interdits.map((x) => DB.items[x].icone).join(" ") + "</span>" : "") + "</div>";
+  if (i.description) h += "<p class='desc-ile'>" + esc(i.description) + "</p>";
   if (palierIle(i.id).id === "hostile") h += "<div class='bloc' style='border-color:#b23a2e;background:#f8dcd6'>⛔ <b>Vous êtes indésirable ici.</b> " + esc(palierIle(i.id).resume) + ".</div>";
   h += objectifsHtml(i);
   if (S.quai.length) h += "<div class='bloc' style='border-color:#c47a1a;background:#fff1d6;display:flex;align-items:center;gap:10px'><span style='font-size:26px'>📦</span><div style='flex:1'><b>" + S.quai.length + " item(s) sur le quai</b><div class='muted'>À ranger dans la cale avant de partir.</div></div><button class='primaire' data-a='cale'>Ranger</button></div>";
@@ -1258,6 +1299,8 @@ function vueTaverne(i) {
   if (tav) {
     const deja = S.rumeurEscale === S.ile + ":" + Math.floor(S.temps);
     h += articleHtml({ icone: "🍺", nom: "Payer un verre et écouter" }, "<button class='prix or' data-a='rumeur' " + (deja || S.or < C.rumeurs.prix ? "disabled" : "") + ">" + C.rumeurs.prix + "<small>" + (deja ? "déjà écouté" : "💰 un verre") + "</small></button>", "Les marins parlent des pénuries et des abondances à venir… pas toujours à raison.", "#e9d6a6");
+    const leg = legendesTaverne(i.id);
+    h += articleHtml({ icone: "📖", nom: "Écouter les vieux marins" }, "<button class='prix' data-a='legende' " + (leg.length ? "" : "disabled") + ">" + (leg.length ? "Écouter" : "—") + "<small>" + (leg.length ? leg.length + " légende(s)" : "rien de neuf") + "</small></button>", leg.length ? "Ils connaissent des histoires que l'on ne raconte qu'ici." : "Vous connaissez déjà toutes les histoires de cette taverne.", "#cfe0d8");
     const recentes = S.rumeurs.slice(0, 3);
     if (recentes.length) h += "<div class='bloc'>" + recentes.map((r) => { const [s, t] = statutRumeur(r); return "<div class='ligne'><div class='g'><div class='nom' style='font-size:13px'>" + esc(texteRumeur(r)) + "</div><span class='effet " + s + "' style='font-size:11.5px'>" + esc(t) + "</span></div></div>"; }).join("") + "</div>";
   }
@@ -1267,7 +1310,7 @@ function vueTaverne(i) {
   if (i.services.includes("recrutement")) {
     const rec = recruesDispo(); const plein = S.equipage.length >= navire().equipageMax;
     h += "<h3>🍺 Recrues <span class='muted' style='font-family:Inter'>" + S.equipage.length + "/" + navire().equipageMax + " à bord</span></h3>";
-    h += rec.length ? rec.map((m) => "<div class='article'>" + portraitSvg(m.portrait, 48) + "<div class='ac'><div class='nom'>" + esc(m.nom) + "</div><div class='sous'>" + esc(DB.roles[m.role].nom) + " · second : " + esc(DB.roles[m.secondaire].nom) + "<br>" + m.salaire + " or/jour" + (m.traits.length ? " · " + m.traits.map((t) => DB.traits[t].nom).join(", ") : "") + "</div></div><button class='prix or' data-recrue='" + m.id + "' " + (plein || S.or < prixRecrue(m) ? "disabled" : "") + ">" + prixRecrue(m) + "<small>" + (plein ? "plus de place" : "💰 recruter") + "</small></button></div>").join("") : "<div class='bloc muted'>" + (effetFaction(i.faction, "pasDeRecrues") ? "Votre mauvaise réputation auprès des " + esc(DB.factions[i.faction].nom) + " fait fuir les candidats." : "Personne ne cherche d'embarquement.") + "</div>";
+    h += rec.length ? rec.map((m) => "<div class='article'>" + portraitSvg(m.portrait, 48) + "<div class='ac'><div class='nom'>" + esc(m.nom) + "</div><div class='sous'>" + esc(DB.roles[m.role].nom) + " · second : " + esc(DB.roles[m.secondaire].nom) + "<br>" + m.salaire + " or/jour" + (m.traits.length ? " · " + m.traits.map((t) => DB.traits[t].nom).join(", ") : "") + "</div></div><button class='prix or' data-recrue='" + m.id + "' " + (plein || S.or < prixRecrue(m) ? "disabled" : "") + ">" + prixRecrue(m) + "<small>" + (plein ? "plus de place" : "💰 recruter") + "</small></button></div>").join("") : "<div class='bloc muted'>" + (effetFaction(i.faction, "pasDeRecrues") ? "Votre mauvaise réputation auprès de " + esc(DB.factions[i.faction].nom) + " fait fuir les candidats." : "Personne ne cherche d'embarquement.") + "</div>";
   } else if (tav) h += "<p class='muted'>Personne ici ne cherche à s'engager.</p>";
   return h;
 }
@@ -1276,7 +1319,7 @@ function vueBanque() {
     "<div class='grille2'><button data-coffre='50'>Déposer 50</button><button data-coffre='-50'>Retirer 50</button><button data-coffre='tout'>Tout déposer</button><button data-coffre='-tout'>Tout retirer</button></div></div>";
 }
 function lierPort(p) {
-  p.querySelectorAll("[data-a]").forEach((b) => b.onclick = () => { const a = b.dataset.a; if (a === "rumeur") return ecouterRumeur(); if (a === "quetes") return afficherPanneau("p-quetes"); if (a === "carte") { if (estPC()) { const m = $("#p-carte"); m.scrollTop = 0; m.classList.remove("secoue"); } afficherPanneau("p-carte"); } if (a === "cale") afficherPanneau("p-cale"); if (a === "accueil") { vuePort = "accueil"; rendrePort(); } if (a === "reparer") reparer(); if (a === "repos") repos(); });
+  p.querySelectorAll("[data-a]").forEach((b) => b.onclick = () => { const a = b.dataset.a; if (a === "rumeur") return ecouterRumeur(); if (a === "legende") return ecouterLegende(); if (a === "quetes") return afficherPanneau("p-quetes"); if (a === "carte") { if (estPC()) { const m = $("#p-carte"); m.scrollTop = 0; m.classList.remove("secoue"); } afficherPanneau("p-carte"); } if (a === "cale") afficherPanneau("p-cale"); if (a === "accueil") { vuePort = "accueil"; rendrePort(); } if (a === "reparer") reparer(); if (a === "repos") repos(); });
   p.querySelectorAll("[data-lieu]").forEach((b) => b.onclick = () => { vuePort = b.dataset.lieu; p.scrollTop = 0; rendrePort(); });
   p.querySelectorAll("[data-seg]").forEach((b) => b.onclick = () => { ongletMarche = b.dataset.seg; rendrePort(); });
   p.querySelectorAll("[data-achat]").forEach((b) => b.onclick = () => acheter(b.dataset.achat));
@@ -1723,6 +1766,7 @@ function infoDestination() {
     const i = DB.iles[destination.ile]; const f = DB.factions[i.faction]; const rep = S.reputation.iles[i.id] || 0;
     const contr = S.contrats.filter((c) => c.destination === i.id).length; const illegaux = tousItems().filter((it) => estInterdit(it.id, i.id));
     h += "<div class='nom titre' style='font-size:22px;color:var(--bois)'>" + esc(i.nom) + "</div><div style='margin:4px 0'><span class='tag' style='background:" + f.couleur + ";color:#fff'>" + esc(f.nom) + "</span><span class='tag'>" + (i.climat === "tropical" ? "🌴 Tropical" : "🌿 Tempéré") + "</span><span class='tag'>👁️ " + niveau(i.surveillance) + "</span><span class='tag " + (rep < 0 ? "rouge" : "vert") + "'>⭐ " + repTexte(rep) + "</span>" + (contr ? "<span class='tag or'>📜 " + contr + " livraison(s)</span>" : "") + "</div>";
+    if (i.description) h += "<div class='desc-ile'>" + esc(i.description) + "</div>";
     if (i.interdits.length) h += "<div class='muted'>Contrebande ici : " + i.interdits.map((x) => DB.items[x].icone + " " + esc(DB.items[x].nom)).join(", ") + "</div>";
     if (illegaux.length) h += "<div style='margin-top:4px'><span class='tag rouge'>⚠️ " + illegaux.length + " item(s) interdit(s) à bord</span></div>";
   } else h += "<div class='nom titre' style='font-size:22px;color:var(--bois)'>🧭 Exploration</div><div class='muted'>Eaux inconnues : on y découvre des îles, mais le danger y est plus grand.</div>";
@@ -1769,9 +1813,9 @@ function texteEtape(e) {
 }
 function rendreQuetes() {
   const p = $("#p-quetes"); if (!p) return;
-  const segs = [["contrats", "Contrats", S.contrats.length], ["quetes", "Quêtes", 0], ["jalons", "Jalons", S.jalonsNonVus || 0], ["reputation", "Réputation", 0]];
+  const segs = [["contrats", "Contrats", S.contrats.length], ["quetes", "Quêtes", 0], ["legendes", "Légendes", S.legendesNonVues || 0], ["jalons", "Jalons", S.jalonsNonVus || 0], ["reputation", "Réputation", 0]];
   let h = "<h2>Quêtes" + (estPC() ? " <button class='btnMini' style='float:right' data-fermer-quetes='1' aria-label='Fermer'>✕</button>" : "") + "</h2>";
-  h += "<div class='segment'>" + segs.map(([id, t, n]) => "<button data-segq='" + id + "' class='" + (ongletQuetes === id ? "actif" : "") + "'>" + t + (n ? " <small class='compte'>" + n + "</small>" : "") + "</button>").join("") + "</div>";
+  h += "<div class='segment cinq'>" + segs.map(([id, t, n]) => "<button data-segq='" + id + "' class='" + (ongletQuetes === id ? "actif" : "") + "'>" + t + (n ? " <small class='compte'>" + n + "</small>" : "") + "</button>").join("") + "</div>";
   if (ongletQuetes === "contrats") {
     h += S.contrats.length ? S.contrats.map(contratEnCours).join("") : "<div class='bloc muted'>Aucun contrat en cours. Les capitaineries des ports en proposent à chaque escale.</div>";
     if (S.ile && offresIci().length) h += "<button class='primaire' data-a='capitainerie' style='width:100%'>📜 Voir les offres de " + esc(DB.iles[S.ile].nom) + "</button>";
@@ -1790,10 +1834,30 @@ function rendreQuetes() {
     h += "<h3>👂 Rumeurs entendues</h3>";
     h += S.rumeurs.length ? S.rumeurs.map((r) => { const [s, t] = statutRumeur(r); return "<div class='article'><div class='ai' style='background:" + DB.items[r.item].couleur + "'>" + DB.items[r.item].icone + "</div><div class='ac'><div class='nom' style='font-size:13px'>" + esc(texteRumeur(r)) + "</div><div class='effets' style='margin-top:4px'><span class='effet " + s + "'>" + esc(t) + "</span></div></div></div>"; }).join("") : "<div class='bloc muted'>Payez un verre dans une taverne pour entendre les nouvelles des marchés.</div>";
   }
+  if (ongletQuetes === "legendes") {
+    S.legendesNonVues = 0;
+    const n = S.legendes.length;
+    h += "<div class='bloc'><div class='nom'>📖 " + n + " / " + C.legendes.length + " légendes</div>" + jauge(n, C.legendes.length) + "<div class='sous'>Les vieux marins des tavernes, les îles et la mer elle-même ont des histoires à raconter.</div></div>";
+    C.categoriesLegendes.forEach((cat) => {
+      const liste = C.legendes.filter((l) => l.categorie === cat.id);
+      h += "<h3>" + cat.icone + " " + esc(cat.nom) + " <span class='muted' style='font-family:Inter;font-size:13px'>" + liste.filter((l) => S.legendes.includes(l.id)).length + "/" + liste.length + "</span></h3>";
+      liste.forEach((l) => {
+        if (S.legendes.includes(l.id)) h += "<details class='leg-entree'><summary>" + esc(l.titre) + "</summary><p>" + esc(l.texte) + "</p></details>";
+        else {
+          let indice = "Une histoire encore inconnue.";
+          if (l.taverne) indice = S.connues.includes(l.taverne) ? "Se raconte à la taverne de " + DB.iles[l.taverne].nom + "." : "Se raconte dans une taverne que vous ne connaissez pas encore.";
+          else if (l.ile) indice = S.connues.includes(l.ile) ? "À découvrir en accostant à " + DB.iles[l.ile].nom + "." : "À découvrir sur une île encore inconnue.";
+          else if (l.page) indice = "Une page perdue : on dit que la Persévérance hante la Brume, la nuit.";
+          else indice = "On la vit en mer, la nuit.";
+          h += "<div class='leg-entree verrou'>🔒 <span>" + (l.page ? esc(l.titre) : "???") + "</span><div class='sous'>" + esc(indice) + "</div></div>";
+        }
+      });
+    });
+  }
   if (ongletQuetes === "jalons") {
     S.jalonsNonVus = 0;
     const faits = S.jalons.length;
-    h += "<div class='bloc' style='display:flex;align-items:center;gap:10px'><div style='flex:1'><div class='nom'>🎖️ " + esc(S.titre || "Aucun titre") + "</div><div class='muted'>" + faits + " / " + C.jalons.length + " jalons · génération " + S.generation + "</div>" + jauge(faits, C.jalons.length) + "</div><button data-a='personnaliser'>🎨 Personnaliser</button></div>";
+    h += "<div class='bloc' style='display:flex;align-items:center;gap:10px'><div style='flex:1'><div class='nom'>🎖️ " + esc(S.titre || "Aucun titre") + "</div><div class='muted'>" + faits + " / " + C.jalons.length + " jalons</div>" + jauge(faits, C.jalons.length) + "</div><button data-a='personnaliser'>🎨 Personnaliser</button></div>";
     const tri = [...C.jalons].sort((a, b) => { const pa = progressionJalon(a), pb = progressionJalon(b); return (pa.fait - pb.fait) || (pb.v / pb.cible - pa.v / pa.cible); });
     tri.forEach((j) => {
       const pr = progressionJalon(j);
@@ -1811,6 +1875,7 @@ function rendreQuetes() {
       const v = S.reputation.factions[f.id] || 0; const r = rivale(f.id); const nm = niveauMefiance(f.id);
       const effets = C.factionsPaliers.filter((x) => x.faction === f.id);
       h += "<div class='bloc'><div class='d-tete'><div class='nom'><span class='pastille-f' style='background:" + f.couleur + "'></span>" + esc(f.nom) + "</div><b>" + (v >= 0 ? "+" : "") + arr(v) + "</b></div>" + barreRep(v) +
+        (f.description ? "<div class='sous'>" + esc(f.description) + "</div>" : "") + (f.chef ? "<div class='sous'>👤 " + esc(f.chef.nom) + ", " + esc(f.chef.titre) + "</div>" : "") +
         "<div class='sous'>" + (r ? "Rivale : " + esc(DB.factions[r].nom) + " (perd " + pct(C.rivalites.taux) + " de vos gains ici)" : "") + "</div>" +
         "<div class='sous'>Méfiance : <span class='tag' style='background:" + nm.couleur + ";color:#fff'>" + esc(nm.nom) + " · " + arr(S.mefiance[f.id] || 0) + "</span></div>" +
         "<ul class='effets-f'>" + effets.map((x) => { const actif = x.seuil > 0 ? v >= x.seuil : v <= x.seuil; return "<li class='" + (actif ? (x.seuil > 0 ? "actif" : "malus") : "") + "'>" + (actif ? (x.seuil > 0 ? "✔ " : "⚠ ") : (x.seuil > 0 ? "🔒 " : "· ")) + "<b>" + (x.seuil > 0 ? "+" : "") + x.seuil + "</b> " + esc(x.texte) + "</li>"; }).join("") + "</ul></div>";
@@ -1864,7 +1929,7 @@ function portraitSvg(p, t) {
 function rendreEquipage() {
   const p = $("#p-equipage"); const n = navire();
   let h = (S.titre ? "<div class='tag or' style='margin-bottom:6px'>🎖️ " + esc(S.titre) + "</div>" : "") + "<h2>Équipage <span class='muted' style='font-family:Inter;font-size:14px'>" + S.equipage.length + "/" + n.equipageMax + "</span>" + (estPC() ? " <button style='float:right;min-height:30px;padding:2px 10px' onclick=\"document.body.classList.remove('voirEquipage')\">✕</button>" : "") + "</h2>";
-  h += "<div class='bloc'><div class='ligne'><div class='g'><div class='nom'>🤝 Cohésion</div>" + jauge(S.cohesion) + "</div><b>" + arr(S.cohesion) + "</b></div><div class='muted'>Génération " + S.generation + " · vivres frais il y a " + S.joursSansFrais + " j" + (S.joursSansFrais > C.equipage.scorbutApresJours ? " — <b style='color:var(--danger)'>scorbut !</b>" : "") + "</div></div>";
+  h += "<div class='bloc'><div class='ligne'><div class='g'><div class='nom'>🤝 Cohésion</div>" + jauge(S.cohesion) + "</div><b>" + arr(S.cohesion) + "</b></div><div class='muted'>Vivres frais il y a " + S.joursSansFrais + " j" + (S.joursSansFrais > C.equipage.scorbutApresJours ? " — <b style='color:var(--danger)'>scorbut !</b>" : "") + "</div></div>";
   S.equipage.forEach((m) => {
     h += "<div class='bloc marin'>" + portraitSvg(m.portrait, 64) + "<div style='flex:1;min-width:0'><div class='nom' style='font-size:15px'>" + esc(m.nom) + "</div><div class='muted'>" + esc(DB.roles[m.role].nom) + (m.secondaire ? " · second : " + esc(DB.roles[m.secondaire].nom) : "") + " · " + m.salaire + " or/j</div>" +
       (m.traits.length ? "<div>" + m.traits.map((t) => "<span class='tag' title='" + esc(DB.traits[t].description) + "'>" + esc(DB.traits[t].nom) + "</span>").join("") + "</div>" : "") +
@@ -1893,9 +1958,12 @@ let minuteurToast = null;
 function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.add("vu"); clearTimeout(minuteurToast); minuteurToast = setTimeout(() => el.classList.remove("vu"), 2400); }
 
 async function menu() {
-  const r = await modale({ titre: "Menu", icone: "☰", html: "<p class='muted'>Prototype 0.5 · la partie est sauvegardée automatiquement dans ce navigateur.</p>", boutons: [{ t: "Reprendre", primaire: true }, { t: "Comment jouer" }, { t: "Nouvelle partie" }] });
+  const r = await modale({ titre: "Menu", icone: "☰", html: "<p class='muted'>Prototype 0.6 · an " + C.monde.annee + " du Fanal · la partie est sauvegardée automatiquement dans ce navigateur.</p>", boutons: [{ t: "Reprendre", primaire: true }, { t: "Comment jouer" }, { t: "Nouvelle partie" }] });
   if (r === 1) aide();
-  if (r === 2) { const c = await modale({ titre: "Nouvelle partie ?", icone: "⚠️", theme: "echec", html: "<p>La partie en cours sera effacée.</p>", boutons: [{ t: "Recommencer", primaire: true }, { t: "Annuler" }] }); if (c === 0) { nouvellePartie(); destination = null; selection = null; enPause = true; vuePort = "accueil"; precedent = null; rendreTout(); afficherPanneau("p-port"); } }
+  if (r === 2) { const c = await modale({ titre: "Nouvelle partie ?", icone: "⚠️", theme: "echec", html: "<p>La partie en cours sera effacée.</p>", boutons: [{ t: "Recommencer", primaire: true }, { t: "Annuler" }] }); if (c === 0) { nouvellePartie(); destination = null; selection = null; enPause = true; vuePort = "accueil"; precedent = null; rendreTout(); afficherPanneau("p-port"); intro(); } }
+}
+function intro() {
+  return modale({ titre: "Les Hauts-Fonds de Sel", icone: "🌫️", theme: "fantome", html: "<p>" + esc(C.monde.intro) + "</p>", boutons: [{ t: "Prendre la mer", primaire: true }] });
 }
 function aide() {
   return modale({ titre: "Comment jouer", icone: "🧭", theme: "mer", html: "<ul>" +
@@ -1904,6 +1972,7 @@ function aide() {
     "<li><b>🗺️ Carte</b> : touchez une île pour y aller, ou la mer et le brouillard pour explorer.</li>" +
     "<li><b>⛵ En mer</b> : ⏸ x1 x2 x4 règlent le temps. L'équipage mange 1 ration par jour. Les événements mettent le jeu en pause.</li>" +
     "<li><b>📜 Quêtes</b> : suivez vos contrats, les chaînes de quêtes, les rumeurs, les jalons (qui débloquent couleurs, pavillons et titres) et votre réputation. Chaque palier de réputation sur une île apporte des avantages ; gagner la confiance d'une faction agace sa rivale.</li><li><b>🍺 Rumeurs</b> : à la taverne, un verre permet d'apprendre une pénurie ou une abondance à venir… parfois fausse.</li><li><b>⚠️ Contrebande</b> : très rentable là où elle est interdite, mais gare aux inspections et à la méfiance des factions.</li>" +
+    "<li><b>📖 Légendes</b> : les vieux marins des tavernes, les îles et la mer racontent l'histoire de l'archipel. Certaines légendes mènent à des trésors. Retrouvez-les dans Quêtes › Légendes.</li>" +
     "<li><b>🌊 Naufrage</b> : un seul marin survit et repart sur une barque. Le coffre à terre est conservé.</li></ul>", boutons: [{ t: "À la mer !", primaire: true }] });
 }
 
@@ -1923,8 +1992,8 @@ function demarrer() {
   let largeurPrec = window.innerWidth;
   window.addEventListener("resize", () => { if (glisse || Math.abs(window.innerWidth - largeurPrec) < 20) return; largeurPrec = window.innerWidth; rendreTout(); });
   requestAnimationFrame(boucle);
-  if (!reprise) aide();
-  window.__jeu = { get S() { return S; }, DB, verifierJalons, changerRep, palierIle, noteArrimage, ecouterRumeur, genererOffres, progressionJalon, personnaliser, creerEvenementMarche, interrompreNavigation, jeterAncre, competence, competenceSalle, placementConseille, posteTempete, posteRepos, deplacerMarin, statutMarin, changerDeCale, desequilibre, stabilite, centreGravite, calePrincipale, cales, vitesseNavire, avancer, arriver, finDeJournee, lancerEvenement, naufrage, rendreTout, raisonPlacement, appliquerGravite, creerItem, retirer, placerAuto };
+  if (!reprise) intro().then(aide);
+  window.__jeu = { get S() { return S; }, DB, debloquerLegende, ecouterLegende, tirerEvenement, verifierJalons, changerRep, palierIle, noteArrimage, ecouterRumeur, genererOffres, progressionJalon, personnaliser, creerEvenementMarche, interrompreNavigation, jeterAncre, competence, competenceSalle, placementConseille, posteTempete, posteRepos, deplacerMarin, statutMarin, changerDeCale, desequilibre, stabilite, centreGravite, calePrincipale, cales, vitesseNavire, avancer, arriver, finDeJournee, lancerEvenement, naufrage, rendreTout, raisonPlacement, appliquerGravite, creerItem, retirer, placerAuto };
 }
 demarrer();
 })();

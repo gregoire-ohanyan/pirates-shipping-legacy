@@ -13,7 +13,7 @@ Le jeu s'ouvre alors en plein écran comme une application. Il fonctionne hors l
 | Fichier | Rôle |
 | --- | --- |
 | `index.html` | Page du jeu : structure et styles |
-| `js/config.js` | **Tous les paramètres d'équilibrage** : marchandises, îles, factions, salles, types de cale, plans des navires, marins, quêtes, événements, temps |
+| `js/config.js` | **Tous les paramètres d'équilibrage** : marchandises, îles, factions, salles, types de cale, plans des navires, marins, quêtes, événements, légendes et textes du monde, temps |
 | `js/game.js` | Moteur et interface (ne contient aucune valeur de jeu) |
 | `manifest.webmanifest` | Nom, icônes et couleurs de l'application installée |
 | `sw.js` | Mise en cache pour jouer hors ligne |
