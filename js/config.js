@@ -69,6 +69,11 @@ window.CONFIG = {
     { id: "mousquets", nom: "Caisse de mousquets",   largeur: 2, hauteur: 1, poids: 9,  prix: 60,  fragile: false, perissable: 0,  craintEau: false, couleur: "#4a4f57", icone: "🔫" },
     { id: "sel",       nom: "Sacs de sel",           largeur: 1, hauteur: 1, poids: 6,  prix: 16,  fragile: false, perissable: 0,  craintEau: true,  couleur: "#e6e1d3", icone: "🧂" },
     { id: "fauxsel",   nom: "Faux-sel",              largeur: 1, hauteur: 1, poids: 6,  prix: 16,  fragile: false, perissable: 0,  craintEau: true,  couleur: "#bfb49c", icone: "🫙" },
+    { id: "perles",    nom: "Coffret de perles",     largeur: 1, hauteur: 1, poids: 1,  prix: 110, fragile: false, perissable: 0,  craintEau: false, couleur: "#e9e4f0", icone: "🦪" },
+    { id: "perlesnoires", nom: "Perles noires",      largeur: 1, hauteur: 1, poids: 1,  prix: 150, fragile: false, perissable: 0,  craintEau: false, couleur: "#3a3542", icone: "⚫" },
+    { id: "corail",    nom: "Branches de corail",    largeur: 2, hauteur: 1, poids: 4,  prix: 50,  fragile: true,  perissable: 0,  craintEau: false, couleur: "#e07a6a", icone: "🪸" },
+    { id: "vanille",   nom: "Gousses de vanille",    largeur: 1, hauteur: 1, poids: 1,  prix: 45,  fragile: false, perissable: 25, craintEau: true,  couleur: "#5a3d22", icone: "🌿" },
+    { id: "coprah",    nom: "Sacs de coprah",        largeur: 2, hauteur: 2, poids: 5,  prix: 10,  fragile: false, perissable: 0,  craintEau: false, couleur: "#cdb68a", icone: "🌴" },
     { id: "lingots",   nom: "Lingots d'argent",      largeur: 1, hauteur: 1, poids: 14, prix: 90,  fragile: false, perissable: 0,  craintEau: false, couleur: "#b9bcc2", icone: "🥈" },
     // --- Vivres (se consomment : 1 ration par marin et par jour) ---
     { id: "biscuits",  nom: "Biscuits de mer",       largeur: 1, hauteur: 1, poids: 3,  prix: 8,   fragile: false, perissable: 0,  craintEau: true,  rations: 10, frais: false, couleur: "#c9a86a", icone: "🍘" },
@@ -100,6 +105,9 @@ window.CONFIG = {
     { id: "naufrageurs", nom: "Les Naufrageurs",  couleur: "#3f7a5f", severite: 0.5, corruptible: 0.9,
       description: "Clans qui allument de faux feux pour piller les épaves. Leurs Feux morts appellent les noyés.",
       chef: { nom: "Gaspard Lanterne-Verte", titre: "chef des Naufrageurs" } },
+    { id: "coralins",    nom: "Les Coralins",     couleur: "#2a9d8f", severite: 0.3, corruptible: 0.4,
+      description: "Le peuple des lagons de Nacre, isolé par la Brume depuis des siècles. Leur Chant des coraux apaise les récifs.",
+      chef: { nom: "La Vieille Anémone", titre: "gardienne des chants" } },
     { id: "aucune",      nom: "Sans maître",      couleur: "#777777", severite: 0,   corruptible: 1 }
   ],
 
@@ -120,28 +128,31 @@ window.CONFIG = {
      ameliorations : ids d'améliorations vendues ici (voir "ameliorations")
      evenementArrivee : id d'événement déclenché à la première arrivée (optionnel)
      description   : présentation de l'île (accueil du port et carte)
+     forme         : "atoll" = dessinée en anneau sur la carte
+     nomCarte      : nom plus court affiché sur la carte (facultatif)
+     repeterTantQue : l'événement d'arrivée se répète tant que cette statistique vaut 0
      ------------------------------------------------------------------ */
   iles: [
     { id: "hautegarde", nom: "Hautegarde", x: 30, y: 26, faction: "fanaux", climat: "tempere", connue: true, cachee: false,
       danger: 0.15, surveillance: 0.6, marche: true,
       produit: { mousquets: 0.7, poudre: 0.7, biscuits: 0.8 },
-      demande: { sucre: 1.5, epices: 1.6, fruitsvente: 1.8, soie: 1.4, sel: 1.5 },
-      interdits: ["tabac", "rhum", "fauxsel"],
+      demande: { sucre: 1.5, epices: 1.6, fruitsvente: 1.8, soie: 1.4, sel: 1.5, perles: 1.5, vanille: 1.6 },
+      interdits: ["tabac", "rhum", "fauxsel", "perlesnoires"],
       services: ["reparation", "recrutement", "chantier", "coffre", "taverne"], ameliorations: ["coque", "lanterne"],
       description: "Siège du Grand Fanal, le plus vieux phare de l'archipel. Ville austère et très surveillée." },
 
     { id: "vasque", nom: "Comptoir de Vasque", x: 76, y: 40, faction: "couronne", climat: "tropical", connue: true, cachee: false,
       danger: 0.25, surveillance: 0.4, marche: true,
       produit: { epices: 0.6, soie: 0.65, porcelaine: 0.7, sel: 0.5 },
-      demande: { bois: 1.5, rhum: 1.4, poisson: 1.4 },
-      interdits: ["mousquets", "fauxsel"],
+      demande: { bois: 1.5, rhum: 1.4, poisson: 1.4, corail: 1.5, perles: 1.3 },
+      interdits: ["mousquets", "fauxsel", "perlesnoires"],
       services: ["reparation", "coffre", "taverne"], ameliorations: ["baches"],
       description: "Salines royales et entrepôts immenses. Tout s'y achète, tout y est taxé." },
 
     { id: "lunebaie", nom: "Lunebaie", x: 40, y: 78, faction: "etoile", climat: "tropical", connue: true, cachee: false,
       danger: 0.2, surveillance: 0.15, marche: true,
       produit: { sucre: 0.6, rhum: 0.6, fruitsvente: 0.5, fruits: 0.7, fauxsel: 0.55 },
-      demande: { mousquets: 1.6, porcelaine: 1.5, poudre: 1.4 },
+      demande: { mousquets: 1.6, porcelaine: 1.5, poudre: 1.4, perlesnoires: 1.5, vanille: 1.4 },
       interdits: [],
       services: ["reparation", "recrutement", "taverne"], ameliorations: [],
       description: "Port franc aux mille quais et aux mille tavernes, capitale officieuse de l'Étoile Noire." },
@@ -157,7 +168,7 @@ window.CONFIG = {
     { id: "criquenoire", nom: "La Crique Noire", x: 82, y: 96, faction: "naufrageurs", climat: "tropical", connue: false, cachee: true,
       danger: 0.5, surveillance: 0.0, marche: true,
       produit: { lingots: 0.75, rhum: 0.8 },
-      demande: { mousquets: 2.0, poudre: 1.8, tabac: 1.6, soie: 1.5, sel: 1.4 },
+      demande: { mousquets: 2.0, poudre: 1.8, tabac: 1.6, soie: 1.5, sel: 1.4, perlesnoires: 1.6, corail: 1.4 },
       interdits: [],
       services: ["reparation", "recrutement", "taverne"], ameliorations: ["cachette"],
       description: "Crique cernée de récifs, avec de faux feux allumés sur les falaises." },
@@ -166,7 +177,46 @@ window.CONFIG = {
       danger: 0.6, surveillance: 0.0, marche: false,
       produit: {}, demande: {}, interdits: [],
       services: [], ameliorations: [], evenementArrivee: "fouille_tresor",
-      description: "Île longtemps noyée dans la Brume. Ruines anciennes, gibet sans explication." }
+      description: "Île longtemps noyée dans la Brume. Ruines anciennes, gibet sans explication." },
+
+    // ===== Région 2 : l'Archipel de Nacre (au sud de la Brume, accessible après la Passe) =====
+    { id: "portroyal", nom: "Port-Royal", x: 36, y: 176, faction: "couronne", climat: "tropical", connue: false, cachee: false,
+      danger: 0.3, surveillance: 0.7, marche: true,
+      produit: { poudre: 0.8, mousquets: 0.85, biscuits: 0.9 },
+      demande: { bois: 2.2, sel: 1.7, biscuits: 1.3, soie: 1.6, porcelaine: 1.5 },
+      interdits: ["perlesnoires", "fauxsel", "tabac"],
+      services: ["reparation", "chantier", "coffre", "taverne", "recrutement"], ameliorations: ["baches"],
+      description: "Fort, chantier et palais du Vice-Roi des Perles. La Couronne y règne sur les atolls." },
+
+    { id: "perliere", nom: "La Perlière", x: 70, y: 186, faction: "couronne", climat: "tropical", connue: false, cachee: false, forme: "atoll",
+      danger: 0.3, surveillance: 0.5, marche: true,
+      produit: { perles: 0.6, coprah: 0.7 },
+      demande: { fruits: 1.6, rhum: 1.7, biscuits: 1.5, sel: 1.5 },
+      interdits: ["perlesnoires"],
+      services: ["taverne"], ameliorations: [],
+      description: "Atoll des pêcheries royales, où des plongeurs coralins travaillent sous contrat." },
+
+    { id: "anneau", nom: "L'Anneau des Mille Pirogues", nomCarte: "Mille Pirogues", x: 18, y: 206, faction: "coralins", climat: "tropical", connue: false, cachee: false, forme: "atoll",
+      danger: 0.25, surveillance: 0.05, marche: true,
+      produit: { corail: 0.5, vanille: 0.5, coprah: 0.5, fruits: 0.6 },
+      demande: { lingots: 1.7, sel: 1.9, bois: 1.8, poudre: 1.3 },
+      interdits: [],
+      services: ["reparation", "recrutement", "taverne"], ameliorations: [],
+      description: "Village sur pilotis au milieu d'un immense lagon. Les Coralins y vivent depuis toujours." },
+
+    { id: "lagonnoir", nom: "Le Lagon Noir", x: 86, y: 222, faction: "etoile", climat: "tropical", connue: false, cachee: true, forme: "atoll",
+      danger: 0.55, surveillance: 0.0, marche: true,
+      produit: { perlesnoires: 0.6 },
+      demande: { mousquets: 1.8, poudre: 1.6, tabac: 1.7, fauxsel: 1.6, rhum: 1.4 },
+      interdits: [],
+      services: ["reparation", "taverne"], ameliorations: ["cachette"],
+      description: "Atoll caché, repaire des contrebandiers de perles de l'Étoile Noire." },
+
+    { id: "recif", nom: "Le Récif du Silence", nomCarte: "Récif du Silence", x: 52, y: 232, faction: "aucune", climat: "tropical", connue: false, cachee: true,
+      danger: 0.65, surveillance: 0.0, marche: false,
+      produit: {}, demande: {}, interdits: [],
+      services: [], ameliorations: [], evenementArrivee: "la_tour", repeterTantQue: "tour",
+      description: "Ruines des Bâtisseurs à demi noyées. Une tour de pierre noire jaillit du lagon." }
   ],
 
   /* ------------------------------------------------------------------
@@ -310,7 +360,10 @@ window.CONFIG = {
     { id: "goran",   nom: "Goran Mèchecourte", role: "canonnier",  secondaire: "charpentier",traits: ["ivrogne"],        salaire: 3, prixRecrutement: 80,  portrait: { peau: "#d9a07a", cheveux: "#555555", chapeau: "aucun",    barbe: true } },
     { id: "salome",  nom: "Salomé Rebouteuse", role: "chirurgien", secondaire: "cuisinier",  traits: ["robuste"],        salaire: 3, prixRecrutement: 90,  portrait: { peau: "#7a4a2e", cheveux: "#3b2416", chapeau: "aucun",    barbe: false } },
     { id: "pietro",  nom: "Pietro Gouvernail", role: "navigateur", secondaire: "vigie",      traits: [],                 salaire: 4, prixRecrutement: 110, portrait: { peau: "#e8c39e", cheveux: "#1f1f1f", chapeau: "tricorne", barbe: true } },
-    { id: "auguste", nom: "Auguste Rabot",     role: "charpentier",secondaire: "arrimeur",   traits: ["robuste"],        salaire: 3, prixRecrutement: 70,  portrait: { peau: "#b97a52", cheveux: "#8b8b8b", chapeau: "bandana",  barbe: true } }
+    { id: "auguste", nom: "Auguste Rabot",     role: "charpentier",secondaire: "arrimeur",   traits: ["robuste"],        salaire: 3, prixRecrutement: 70,  portrait: { peau: "#b97a52", cheveux: "#8b8b8b", chapeau: "bandana",  barbe: true } },
+    // --- Recrues coralines ("iles" : seulement dans ces tavernes) ---
+    { id: "tiv",     nom: "Tiv Anneau-Clair",  role: "vigie",      secondaire: "navigateur", traits: ["robuste"],        salaire: 3, prixRecrutement: 90,  iles: ["anneau"], portrait: { peau: "#a8673f", cheveux: "#1b1209", chapeau: "aucun",    barbe: false } },
+    { id: "sauge",   nom: "Sauge Lagon",       role: "chirurgien", secondaire: "vigie",      traits: [],                 salaire: 3, prixRecrutement: 100, iles: ["anneau"], portrait: { peau: "#8a5232", cheveux: "#2b1b10", chapeau: "bandana",  barbe: false } }
   ],
 
   /* ------------------------------------------------------------------
@@ -416,7 +469,7 @@ window.CONFIG = {
     margeDelai: 1.6,           // délai = durée du trajet x 1.6 (+1 jour)
     etatMin: 60,               // état minimum à la livraison (%)
     reputation: 5,
-    items: ["rhum", "sucre", "epices", "porcelaine", "poisson", "bois", "soie", "fruitsvente", "sel"] // items possibles
+    items: ["rhum", "sucre", "epices", "porcelaine", "poisson", "bois", "soie", "fruitsvente", "sel", "corail", "vanille", "coprah"] // items possibles
   },
 
   /* ------------------------------------------------------------------
@@ -476,7 +529,44 @@ window.CONFIG = {
     { id: "q_soie_robe", type: "livraison", titre: "Soie pour la robe",
       origine: "vasque", destination: "lunebaie", item: "soie", quantite: 2, delaiJours: 8, etatMin: 85,
       recompense: 320, reputation: 12, prerequis: { quetes: ["q_porcelaine"] },
-      texte: "La mariée de Lunebaie veut une robe de soie : deux rouleaux, impeccables. La soie craint l'eau !" }
+      texte: "La mariée de Lunebaie veut une robe de soie : deux rouleaux, impeccables. La soie craint l'eau !" },
+
+    // ----- La Passe du Sud (ouvre l'Archipel de Nacre) -----
+    { id: "q_rumeur_passe", type: "decouverte", titre: "La rumeur de la Passe",
+      origine: "sternes", recompense: 0, reputation: 0, prerequis: {}, revele: [], legende: "passe",
+      texte: "Un passeur édenté jure qu'un chemin s'est ouvert dans la Brume, droit au sud. La Couronne l'emprunte déjà ; l'Étoile Noire aussi. Il faut une carte de la Passe." },
+    { id: "q_lettre_passage", type: "livraison", titre: "La lettre de passage",
+      origine: "vasque", destination: "hautegarde", item: "porcelaine", quantite: 1, delaiJours: 8, etatMin: 80,
+      recompense: 150, reputation: 8, prerequis: { quetes: ["q_rumeur_passe"], reputationFaction: { couronne: 15 } },
+      exclusif: "passe", ouvrePassage: true, revele: ["portroyal"],
+      texte: "La Couronne vous délivre une lettre de passage… qu'il faut faire viser par les Fanaux, gardiens des cartes. Portez ce présent au Grand Gardien : il signera la carte de la Passe." },
+    { id: "q_passeurs", type: "livraison", titre: "La carte des passeurs",
+      origine: "lunebaie", destination: "sternes", item: "fauxsel", quantite: 3, delaiJours: 6, etatMin: 60,
+      recompense: 120, reputation: 8, prerequis: { quetes: ["q_rumeur_passe"] },
+      exclusif: "passe", ouvrePassage: true, revele: ["portroyal"],
+      texte: "Séraphin Minuit veut bien vous confier la carte de ses passeurs… si vous livrez trois sacs de faux-sel à son repaire de l'Île aux Sternes. Sans poser de questions." },
+
+    // ----- L'Archipel de Nacre ("passage: true" = seulement après la Passe) -----
+    { id: "q_bois_fort", type: "livraison", titre: "Du bois pour le fort",
+      origine: "sternes", destination: "portroyal", item: "bois", quantite: 2, delaiJours: 12, etatMin: 60,
+      recompense: 520, reputation: 12, prerequis: { passage: true },
+      texte: "Les atolls n'ont pas de forêts. Le Vice-Roi paie une fortune pour du bois des Hauts-Fonds : son fort tombe en ruine sous les termites." },
+    { id: "q_perles_vice_roi", type: "livraison", titre: "Les perles du Vice-Roi",
+      origine: "perliere", destination: "portroyal", item: "perles", quantite: 2, delaiJours: 5, etatMin: 90,
+      recompense: 420, reputation: 12, prerequis: { quetes: ["q_bois_fort"] },
+      texte: "Le Vice-Roi croit avoir perdu une perle de sa cape. Il en exige deux nouvelles, parfaites, avant le prochain bal." },
+    { id: "q_sel_anneau", type: "livraison", titre: "Le sel des Coralins",
+      origine: "vasque", destination: "anneau", item: "sel", quantite: 3, delaiJours: 14, etatMin: 70,
+      recompense: 380, reputation: 14, prerequis: { passage: true },
+      texte: "Les Coralins salent leur poisson, mais la Couronne leur refuse le sel. La Vieille Anémone paiera bien… sans le dire au Vice-Roi." },
+    { id: "q_rumeur_recif", type: "decouverte", titre: "Le corail qui se tait",
+      origine: "anneau", recompense: 0, reputation: 0, prerequis: {},
+      revele: ["recif"],
+      texte: "La Vieille Anémone parle d'un récif où le corail ne chante plus, et d'une tour qui monte de l'eau. Elle trace pour vous le chemin sur une feuille de palme." },
+    { id: "q_rumeur_lagon", type: "decouverte", titre: "Le nom du Lagon Noir",
+      origine: "perliere", recompense: 0, reputation: 0, prerequis: {},
+      revele: ["lagonnoir"],
+      texte: "Une plongeuse à l'œil de perle noire vous glisse un nom à l'oreille, et un relevé de cap : le Lagon Noir." }
   ],
 
   /* ------------------------------------------------------------------
@@ -485,6 +575,7 @@ window.CONFIG = {
      fantome       : true = navire fantôme (moins fréquent avec la lanterne bénie ou le pacte des Naufrageurs)
      legende       : id de légende débloquée quand l'événement a lieu
      condition     : "pageAlienor" = seulement s'il reste une page du journal d'Aliénor à trouver
+     region        : id de région (voir "regions") : seulement en mer dans cette région
      chanceParJour : probabilité de base par jour de trajet (multipliée par le danger de la route)
      nuitSeulement : true = seulement de nuit
      condition     : "contrebande" = seulement si la cale contient un item interdit chez cette faction (patrouille)
@@ -507,7 +598,8 @@ window.CONFIG = {
        inspection: id de faction (déclenche une inspection), texte (message affiché),
        eauCible / chocCible : comme eau / choc, mais seulement dans la salle ciblée,
        blesseEnvoye : santé perdue par le marin envoyé, coqueCible : comme coque,
-       legende : id de légende débloquée, ou "page" (prochaine page du journal d'Aliénor).
+       legende : id de légende débloquée, ou "page" (prochaine page du journal d'Aliénor),
+       repFaction : [idFaction, points], stat : statistique augmentée de 1 (ex. "tour").
      Après un événement, un marin blessé peut être conduit à l'infirmerie (si le navire en a une).
      ------------------------------------------------------------------ */
   evenements: [
@@ -663,6 +755,57 @@ window.CONFIG = {
           succes: { moral: -2, texte: "Personne à bord n'ose en parler." } }
       ] },
 
+    // --- La Brume et l'Archipel de Nacre ("region" : seulement en mer dans cette région) ---
+    { id: "traversee", titre: "Dans la Brume", icone: "🌫️", theme: "fantome", chanceParJour: 0, legende: "nacre_brume",
+      texte: "Le brouillard se referme sur le navire. Le compas tourne sur lui-même et l'on entend chanter sous la coque. Votre carte de la Passe tremble dans vos mains.",
+      choix: [
+        { texte: "Suivre la carte, cap au sud", test: { competence: "navigation", base: 0.5, parPoint: 0.3 },
+          succes: { moral: 6, texte: "Le chant s'éloigne. Devant vous, la Brume s'ouvre sur des lagons turquoise." },
+          echec:  { jours: 2, moral: -10, coque: -10, texte: "Vous tournez en rond deux jours durant, avant que la Brume ne vous recrache enfin au sud." } },
+        { texte: "Envoyer quelqu'un guetter les récifs", envoi: { salle: "pont", competence: "vigie" }, test: { competence: "vigie", base: 0.45, parPoint: 0.4 },
+          succes: { moral: 4, texte: "Une voix crie « Récif ! » juste à temps. Vous vous faufilez entre deux murs de corail." },
+          echec:  { choc: 25, coque: -15, blesseEnvoye: 10, texte: "La coque racle le corail. Vous passez, mais de justesse." } }
+      ] },
+
+    { id: "cyclone", titre: "Cyclone sur les lagons", icone: "🌀", theme: "orage", chanceParJour: 0.05, region: "nacre",
+      texte: "Le ciel vire au vert. Un cyclone se forme et fond sur les atolls.",
+      choix: [
+        { texte: "Fuir le bord du cyclone", test: { competence: "navigation", base: 0.35, parPoint: 0.35 },
+          succes: { texte: "Vous longez la tempête sans y entrer." },
+          echec:  { coque: -25, eau: 35, choc: 30, moral: -8, texte: "Le cyclone vous happe. La cale est sens dessus dessous." } },
+        { texte: "S'abriter dans un lagon (1 jour)", test: null,
+          succes: { jours: 1, eau: 10, texte: "À l'abri du corail, vous laissez passer la tempête." } }
+      ] },
+
+    { id: "pirogues", titre: "Des pirogues à l'horizon", icone: "🛶", theme: "mer", chanceParJour: 0.05, region: "nacre",
+      texte: "Une flottille de pirogues coralines vient à votre rencontre. On vous tend des gousses de vanille, en échange de quelques pièces.",
+      choix: [
+        { texte: "Échanger (30 or)", test: null,
+          succes: { or: -30, gagner: ["vanille", 2], repFaction: ["coralins", 3], texte: "Les Coralins repartent en chantant. La vanille embaume la cale." } },
+        { texte: "Les saluer et passer", test: null,
+          succes: { texte: "Les pirogues s'éloignent aussi vite qu'elles sont venues." } }
+      ] },
+
+    { id: "plongeur", titre: "Un plongeur en détresse", icone: "🤿", theme: "orage", chanceParJour: 0.04, region: "nacre",
+      texte: "Un plongeur coralin se débat au milieu des ailerons. Son panier de perles lui glisse des mains.",
+      choix: [
+        { texte: "Envoyer quelqu'un lui lancer un cordage", envoi: { salle: "pont", competence: "vigie" }, test: { competence: "vigie", base: 0.5, parPoint: 0.35 },
+          succes: { repFaction: ["coralins", 6], moral: 5, texte: "Vous le hissez à bord. Il vous remercie dans une langue chantante, et vous jure amitié." },
+          echec:  { blesseEnvoye: 20, repFaction: ["coralins", 2], texte: "Vous le sauvez, mais votre marin y laisse un bout de mollet." } },
+        { texte: "Passer son chemin", test: null,
+          succes: { moral: -6, repFaction: ["coralins", -5], texte: "L'équipage détourne les yeux. Les Coralins, eux, ne l'oublieront pas." } }
+      ] },
+
+    { id: "la_tour", titre: "La tour du Récif", icone: "🗼", theme: "fantome", chanceParJour: 0, legende: "tour",
+      texte: "Une tour de pierre noire jaillit du lagon, plus haute que le Grand Fanal : exactement le dessin du journal d'Aliénor. Tout en haut, une lumière brille encore.",
+      choix: [
+        { texte: "Grimper jusqu'au sommet", test: { competence: "vigie", base: 0.45, parPoint: 0.35 },
+          succes: { stat: "tour", legende: "page4", gagner: ["coffre", 1], moral: 10, texte: "Au sommet, une lanterne froide et, coincée dessous, une page de l'écriture d'Aliénor. L'encre est encore fraîche. Dans une niche, un coffre des Bâtisseurs." },
+          echec:  { blesse: 30, moral: -10, texte: "Une marche cède sous vos pieds. Le blessé jure avoir vu une silhouette en haut. Vous redescendez… pour cette fois." } },
+        { texte: "Repartir, ce lieu est maudit", test: null,
+          succes: { moral: -4, texte: "La lumière vous suit des yeux jusqu'à l'horizon." } }
+      ] },
+
     // --- Événement d'arrivée (déclenché par "evenementArrivee" d'une île) ---
     { id: "fouille_tresor", titre: "La croix du Pendu", icone: "💀", theme: "tresor", chanceParJour: 0,
       texte: "La carte indique un vieux gibet au sommet de l'île. L'équipage débarque avec des pelles.",
@@ -704,7 +847,8 @@ window.CONFIG = {
              "pasDeRecrues", "marcheNoir" (x valeur du prix de vente), "pavillonAmi" (chance d'être épargné),
              "pirates" (x valeur de la fréquence des navires hostiles), "marquesOmbre" (x valeur de la chance
              qu'un inspecteur trouve la contrebande), "delation" (x valeur de la chance d'inspection),
-             "feuxMorts" (x valeur de la fréquence des navires fantômes)
+             "feuxMorts" (x valeur de la fréquence des navires fantômes), "recifsCalmes" (x valeur de la chance
+             d'événement en mer dans l'Archipel de Nacre)
      ------------------------------------------------------------------ */
   factionsPaliers: [
     { faction: "fanaux",      seuil: 20,  effet: "info",            texte: "La goélette est en vente au chantier de Hautegarde" },
@@ -718,9 +862,12 @@ window.CONFIG = {
     { faction: "etoile",      seuil: -30, effet: "delation", valeur: 1.5, texte: "L'Étoile Noire vous dénonce : inspections ×1,5" },
     { faction: "naufrageurs", seuil: 20,  effet: "pavillonAmi", valeur: 0.5, texte: "Pavillon ami : une chance sur deux qu'un navire pirate vous laisse passer" },
     { faction: "naufrageurs", seuil: 40,  effet: "feuxMorts", valeur: 0.5, texte: "Pacte des feux morts : deux fois moins de navires fantômes" },
-    { faction: "naufrageurs", seuil: -30, effet: "pirates", valeur: 1.5, texte: "Les navires pirates vous cherchent : rencontres ×1,5" }
+    { faction: "naufrageurs", seuil: -30, effet: "pirates", valeur: 1.5, texte: "Les navires pirates vous cherchent : rencontres ×1,5" },
+    { faction: "coralins",    seuil: 20,  effet: "recrutement", valeur: 0.5, texte: "Les Coralins embarquent à moitié prix sur leurs îles" },
+    { faction: "coralins",    seuil: 40,  effet: "recifsCalmes", valeur: 0.5, texte: "Chant des coraux : deux fois moins d'incidents en mer dans l'Archipel de Nacre" },
+    { faction: "coralins",    seuil: -30, effet: "pasDeRecrues",    texte: "Plus aucun Coralin ne veut embarquer avec vous" }
   ],
-  rivalites: { taux: 0.25, paires: [["fanaux", "naufrageurs"], ["couronne", "etoile"]] }, // un gain chez l'une retire 25 % de ce gain chez l'autre
+  rivalites: { taux: 0.25, paires: [["fanaux", "naufrageurs"], ["couronne", "etoile"], ["couronne", "coralins"]] }, // un gain chez l'une retire 25 % de ce gain chez l'autre
 
   /* ------------------------------------------------------------------
      MÉFIANCE (par faction, de 0 à 100) : niveaux et effets
@@ -748,7 +895,8 @@ window.CONFIG = {
       { id: "nuit",   nom: "Bleu nuit", couleur: "#1f3a5f" },
       { id: "or",     nom: "Dorure", couleur: "#b8902e" },
       { id: "ivoire", nom: "Ivoire", couleur: "#d9ccb0" },
-      { id: "ebene",  nom: "Ébène", couleur: "#1d1612" }
+      { id: "ebene",  nom: "Ébène", couleur: "#1d1612" },
+      { id: "lagon",  nom: "Lagon", couleur: "#2a8d8a" }
     ],
     pavillons: [
       { id: "marchand", nom: "Marchand", couleurs: ["#3f8a4f", "#3f8a4f"], base: true },
@@ -756,7 +904,8 @@ window.CONFIG = {
       { id: "soleil",   nom: "Soleil", couleurs: ["#e7b92f", "#8a2f2f"] },
       { id: "etoile",   nom: "Étoile", couleurs: ["#7a3e6e", "#e7c977"] },
       { id: "crane",    nom: "Crâne", couleurs: ["#151515", "#eeeeee"] },
-      { id: "brume",    nom: "Brume", couleurs: ["#3f7a6f", "#d9e6df"] }
+      { id: "brume",    nom: "Brume", couleurs: ["#3f7a6f", "#d9e6df"] },
+      { id: "nacre",    nom: "Nacre", couleurs: ["#2a9d8f", "#f4efe6"] }
     ]
   },
 
@@ -765,7 +914,7 @@ window.CONFIG = {
      condition : { type, valeur }
        "stat"           : statistique de la partie ("livraisons", "livraisonsATemps", "livraisonsParfaites",
                           "ventesOr", "joursMer", "mouillages", "inspectionsEchappees", "tresors", "naufrages") ; champ "stat"
-       "ilesConnues", "toutesIles", "fortune" (or à bord + coffre), "navire" (champ "navire"),
+       "ilesConnues", "toutesIles" (champ "region" facultatif), "fortune" (or à bord + coffre), "navire" (champ "navire"),
        "equipageComplet", "generation", "palier" (champ "palier" : une île à ce palier)
      Statistiques liées aux légendes : "legendes" (légendes découvertes), "pagesAlienor"
      recompense : { or, couleur, pavillon, titre }
@@ -777,7 +926,7 @@ window.CONFIG = {
     { id: "bourse",          nom: "Bourse pleine", description: "Posséder 1 000 or (à bord et au coffre).", condition: { type: "fortune", valeur: 1000 }, recompense: { couleur: "or" } },
     { id: "negociant",       nom: "Négociant", description: "Vendre pour 5 000 or de marchandises.", condition: { type: "stat", stat: "ventesOr", valeur: 5000 }, recompense: { titre: "Négociant", pavillon: "soleil" } },
     { id: "cartographe",     nom: "Cartographe", description: "Découvrir 5 îles.", condition: { type: "ilesConnues", valeur: 5 }, recompense: { titre: "Cartographe", couleur: "nuit" } },
-    { id: "terra",           nom: "Terra cognita", description: "Découvrir toutes les îles de la région.", condition: { type: "toutesIles" }, recompense: { titre: "Maître de l'archipel", pavillon: "etoile" } },
+    { id: "terra",           nom: "Terra cognita", description: "Découvrir toutes les îles des Hauts-Fonds de Sel.", condition: { type: "toutesIles", region: "hautsfonds" }, recompense: { titre: "Maître de l'archipel", pavillon: "etoile" } },
     { id: "explorateur",     nom: "Explorateur", description: "Jeter l'ancre 3 fois en eaux inconnues.", condition: { type: "stat", stat: "mouillages", valeur: 3 }, recompense: { titre: "Explorateur" } },
     { id: "goelette",        nom: "Nouvelle coque", description: "Acheter une goélette.", condition: { type: "navire", navire: "goelette" }, recompense: { couleur: "ivoire", or: 100 } },
     { id: "vieux_loup",      nom: "Vieux loup de mer", description: "Passer 100 jours en mer.", condition: { type: "stat", stat: "joursMer", valeur: 100 }, recompense: { titre: "Vieux loup de mer" } },
@@ -788,7 +937,9 @@ window.CONFIG = {
     { id: "survivant",       nom: "Survivant", description: "Survivre à un naufrage.", condition: { type: "stat", stat: "naufrages", valeur: 1 }, recompense: { titre: "Rescapé" } },
     { id: "dynastie",        nom: "Revenant des mers", description: "Survivre à 3 naufrages.", condition: { type: "stat", stat: "naufrages", valeur: 3 }, recompense: { titre: "Revenant des mers" } },
     { id: "conteur",         nom: "Conteur", description: "Découvrir 12 légendes.", condition: { type: "stat", stat: "legendes", valeur: 12 }, recompense: { titre: "Conteur des Hauts-Fonds", pavillon: "brume" } },
-    { id: "journal_alienor", nom: "Sur la trace d'Aliénor", description: "Retrouver les 3 pages du journal d'Aliénor Corvelle.", condition: { type: "stat", stat: "pagesAlienor", valeur: 3 }, recompense: { titre: "Chercheur de Brume", or: 150 } }
+    { id: "passe_brume",     nom: "Au-delà de la Brume", description: "Traverser la Passe des Brumes.", condition: { type: "stat", stat: "passages", valeur: 1 }, recompense: { titre: "Passe-Brume", pavillon: "nacre" } },
+    { id: "atolls",          nom: "Maître des atolls", description: "Découvrir toutes les îles de l'Archipel de Nacre.", condition: { type: "toutesIles", region: "nacre" }, recompense: { titre: "Maître des atolls", couleur: "lagon" } },
+    { id: "journal_alienor", nom: "Sur la trace d'Aliénor", description: "Retrouver 3 pages du journal d'Aliénor Corvelle.", condition: { type: "stat", stat: "pagesAlienor", valeur: 3 }, recompense: { titre: "Chercheur de Brume", or: 150 } }
   ],
 
   /* ------------------------------------------------------------------
@@ -800,7 +951,7 @@ window.CONFIG = {
     duree: [5, 8],                 // durée en jours
     penurie: 1.8,                  // multiplicateur de prix pendant une pénurie
     abondance: 0.55,               // multiplicateur de prix pendant une abondance
-    items: ["sucre", "rhum", "tabac", "epices", "soie", "porcelaine", "bois", "poisson", "poudre", "mousquets", "fruitsvente", "sel"]
+    items: ["sucre", "rhum", "tabac", "epices", "soie", "porcelaine", "bois", "poisson", "poudre", "mousquets", "fruitsvente", "sel", "perles", "corail", "vanille"]
   },
   rumeurs: {
     prix: 5,                       // prix d'un verre à la taverne
@@ -812,7 +963,7 @@ window.CONFIG = {
     multRecompense: 2.5,
     multDelai: 0.8,                // délai plus serré
     etatMin: 80,
-    items: ["porcelaine", "soie", "rhum", "epices", "lingots"]
+    items: ["porcelaine", "soie", "rhum", "epices", "lingots", "perles", "corail"]
   },
   livraisonParfaite: { seuil: 95, bonus: 0.2 }, // +20 % si la marchandise arrive à 95 % d'état ou plus
 
@@ -830,12 +981,16 @@ window.CONFIG = {
 
   /* ------------------------------------------------------------------
      CHAÎNES DE QUÊTES (affichées dans l'onglet Quêtes)
-     etapes : { quete: id } ou { stat: id, valeur, texte } (étape réussie quand la statistique est atteinte)
+     etapes : { quete: id }, { ou: [ids de quêtes], texte } (l'une ou l'autre)
+              ou { stat: id, valeur, texte } (étape réussie quand la statistique est atteinte)
      ------------------------------------------------------------------ */
   chaines: [
     { id: "gouverneur", titre: "Les caprices du Grand Gardien", etapes: [{ quete: "q_premier_rhum" }, { quete: "q_epices_bal" }] },
     { id: "mariage",    titre: "Le mariage de Lunebaie",     etapes: [{ quete: "q_porcelaine" }, { quete: "q_soie_robe" }] },
     { id: "confrerie",  titre: "Les secrets des Naufrageurs", etapes: [{ quete: "q_rumeur_crique" }, { quete: "q_mousquets" }] },
+    { id: "passe",      titre: "La Passe du Sud",             etapes: [{ quete: "q_rumeur_passe" }, { ou: ["q_lettre_passage", "q_passeurs"], texte: "Obtenir la route : lettre de la Couronne ou carte de l'Étoile Noire" }, { stat: "passages", valeur: 1, texte: "Traverser la Passe des Brumes" }] },
+    { id: "nacre",      titre: "Entre le Vice-Roi et les Coralins", etapes: [{ quete: "q_bois_fort" }, { quete: "q_perles_vice_roi" }, { quete: "q_sel_anneau" }] },
+    { id: "recif",      titre: "Le secret du Récif",          etapes: [{ quete: "q_rumeur_recif" }, { stat: "tour", valeur: 1, texte: "Gravir la tour du Récif du Silence" }] },
     { id: "pendu",      titre: "Le trésor du Pendu",          etapes: [{ quete: "q_rumeur_crique" }, { quete: "q_carte_pendu" }, { stat: "tresors", valeur: 1, texte: "Déterrer le coffre sur l'Île du Pendu" }] }
   ],
 
@@ -848,7 +1003,8 @@ window.CONFIG = {
        ile       : débloquée à la première arrivée sur cette île
        taverne   : racontée par les vieux marins de cette île (bouton à la taverne)
        (une légende peut aussi être débloquée par un événement : champ "legende" des événements)
-       page      : numéro de page du journal d'Aliénor (trouvées dans l'ordre)
+       page      : numéro de page du journal d'Aliénor (trouvées dans l'ordre ; "special" = seulement par un événement précis)
+       indice    : texte affiché tant que la légende est inconnue (facultatif)
      ------------------------------------------------------------------ */
   monde: {
     annee: 312,
@@ -856,6 +1012,7 @@ window.CONFIG = {
   },
   categoriesLegendes: [
     { id: "monde", nom: "Le monde", icone: "🌫️" },
+    { id: "nacre", nom: "L'Archipel de Nacre", icone: "🐚" },
     { id: "factions", nom: "Factions", icone: "⚑" },
     { id: "personnages", nom: "Personnages", icone: "👤" },
     { id: "journal", nom: "Journal d'Aliénor", icone: "📓" }
@@ -904,12 +1061,32 @@ window.CONFIG = {
     { id: "amiral_os", categorie: "personnages", titre: "L'Amiral d'Os", taverne: "criquenoire",
       texte: "Il commande La Dernière Marée, un trois-mâts aux voiles en lambeaux. Squelette d'une politesse exquise, il réclame un péage en âmes ou en or. On dit qu'il adore les dés… et qu'il triche." },
 
+    { id: "passe", categorie: "monde", titre: "La Passe des Brumes", taverne: "sternes",
+      texte: "Au sud de l'Île aux Sternes, la Brume s'est amincie au point de laisser passer un navire. La Couronne a été la première à la franchir, il y a huit ans. Sans carte, on y tourne en rond jusqu'à la folie." },
+    { id: "nacre_brume", categorie: "nacre", titre: "L'Archipel de Nacre", indice: "Se découvre en traversant la Passe des Brumes.",
+      texte: "Derrière la Brume, des anneaux de corail entourent des lagons turquoise. La Couronne y a planté son drapeau, mais ces atolls n'ont jamais été vides : les Coralins y vivent depuis toujours." },
+    { id: "chant_coraux", categorie: "nacre", titre: "Le Chant des coraux", taverne: "anneau",
+      texte: "Les Coralins chantent au récif, et le récif répond : il ouvre des passes, apaise les requins et garde les noyés au fond. Ils disent que le corail se souvient de tout." },
+    { id: "perle_fausse", categorie: "nacre", titre: "La fausse perle", taverne: "portroyal",
+      texte: "Le Vice-Roi porte une cape cousue de mille perles. L'une d'elles est fausse, et il en perd le sommeil. Au port, on murmure que c'est Nacre-Noire qui l'a cousue là, pour rire." },
+    { id: "tour", categorie: "nacre", titre: "La tour du Récif", indice: "Se découvre au Récif du Silence.",
+      texte: "Une tour de pierre noire, bâtie par les Bâtisseurs au milieu d'un lagon où le corail ne chante plus. Exactement la tour du journal d'Aliénor. Une lumière y brille encore, et personne ne sait qui l'allume." },
+    { id: "l_coralins", categorie: "factions", titre: "Les Coralins", ile: "anneau",
+      texte: "Le peuple des lagons de Nacre, isolé par la Brume depuis des siècles. Ils naviguent en pirogue, chantent au récif et refusent de plonger pour le Vice-Roi. Depuis l'arrivée de la Couronne, certains ont rejoint l'Étoile Noire." },
+    { id: "sabliere", categorie: "personnages", titre: "Hugues de Sablière, le Vice-Roi des Perles", ile: "portroyal",
+      texte: "Il porte une cape cousue de mille perles et les compte chaque matin. Il veut faire des atolls la nouvelle fortune de la Couronne, et des Coralins ses plongeurs." },
+    { id: "anemone", categorie: "personnages", titre: "La Vieille Anémone", ile: "anneau",
+      texte: "Gardienne des chants du récif. Elle parle au corail comme à un vieil ami, et dit qu'il se souvient même des Bâtisseurs." },
+    { id: "nacre_noire", categorie: "personnages", titre: "Nacre-Noire", ile: "lagonnoir",
+      texte: "Plongeuse coraline passée à la contrebande. Elle porte une perle noire à la place d'un œil, et fait sortir des atolls tout ce que la Couronne voudrait garder." },
     { id: "page1", categorie: "journal", titre: "Page 1", page: 1,
       texte: "« Jour 3 dans la Brume. Le compas tourne sur lui-même. Les hommes entendent chanter sous la coque. Je tiens le cap au sud-sud-est, d'après des étoiles qu'on ne voit pas. »" },
     { id: "page2", categorie: "journal", titre: "Page 2", page: 2,
       texte: "« Jour 9. Une tour, au milieu de l'eau, plus haute que le Grand Fanal. Il y a de la lumière tout en haut. Quelqu'un, ou quelque chose, nous attendait. »" },
     { id: "page3", categorie: "journal", titre: "Page 3", page: 3,
-      texte: "« La Brume ne garde pas, elle attend que… » La phrase s'arrête là. Au dos, un relevé de cap, et une étoile dessinée à l'encre noire." }
+      texte: "« La Brume ne garde pas, elle attend que… » La phrase s'arrête là. Au dos, un relevé de cap, et une étoile dessinée à l'encre noire." },
+    { id: "page4", categorie: "journal", titre: "Page 4", page: 4, special: true, indice: "Une page qui n'aurait jamais dû quitter la Brume…",
+      texte: "« J'ai trouvé la tour. Elle n'est pas faite pour garder la Brume : elle la nourrit. Si quelqu'un lit ceci, éteignez la lumière. » Daté de l'an 293. L'encre est encore fraîche." }
   ],
 
   /* ------------------------------------------------------------------
@@ -925,7 +1102,13 @@ window.CONFIG = {
   /* ------------------------------------------------------------------
      CARTE
      ------------------------------------------------------------------ */
+  regions: [
+    { id: "hautsfonds", nom: "Les Hauts-Fonds de Sel", y0: 0, y1: 140 },
+    { id: "nacre", nom: "L'Archipel de Nacre", y0: 160, y1: 245 }
+  ],
   carte: {
+    largeur: 100, hauteur: 245, // taille du monde (la carte affiche 100 x 140 à la fois : on la fait glisser)
+    brume: { y0: 140, y1: 160, passage: { x: 16, y: 150, largeur: 16 }, danger: 0.7, fantomes: 2 }, // bande de Brume entre les régions
     rayonDecouverte: 26,       // distance à laquelle une île normale est découverte
     rayonParNavigation: 8,     // + rayon par point de compétence "navigation"
     rayonIleCachee: 9,         // distance à laquelle une île cachée est découverte en passant

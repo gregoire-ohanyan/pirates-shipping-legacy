@@ -70,7 +70,7 @@ function nouvellePartie() {
     stats: {}, jalons: [], jalonsNonVus: 0,
     cosmetiques: { couleurs: [], pavillons: [], titres: [] }, apparence: { couleur: "modele", pavillon: "marchand" }, titre: null,
     marche: [], rumeurs: [], bilan: null,
-    monde: 2, legendes: C.legendes.filter((l) => l.depart).map((l) => l.id), legendesNonVues: 0
+    passageOuvert: false, monde: 2, legendes: C.legendes.filter((l) => l.depart).map((l) => l.id), legendesNonVues: 0
   };
   C.iles.forEach((i) => { S.reputation.iles[i.id] = 0; S.prixMod[i.id] = {}; });
   C.factions.forEach((f) => { S.reputation.factions[f.id] = 0; S.mefiance[f.id] = 0; });
@@ -113,6 +113,7 @@ function migrer() {
     S.monde = 2;
   }
   C.factions.forEach((f) => { if (S.reputation.factions[f.id] === undefined) S.reputation.factions[f.id] = 0; if (S.mefiance[f.id] === undefined) S.mefiance[f.id] = 0; });
+  if (S.passageOuvert === undefined) S.passageOuvert = false;
   if (!S.legendes) { S.legendes = C.legendes.filter((l) => l.depart || (l.ile && S.evtArriveeFaits.concat([S.ile]).includes(l.ile))).map((l) => l.id); S.legendesNonVues = 0; }
   S.legendes = S.legendes.filter((id) => DB.legendes[id]); S.stats.legendes = S.legendes.length;
   S.cale.forEach((it) => { if (!it.cale || !salleDef(it.cale) || !salleDef(it.cale).cale) it.cale = calePrincipale(); });
@@ -369,14 +370,14 @@ function effetFaction(fid, effet) { return effetsFactionActifs(fid).find((p) => 
 function valeurFaction(fid, effet, def) { const e = effetFaction(fid, effet); return e ? (e.valeur !== undefined ? e.valeur : true) : def; }
 function effetQuelconque(effet) { for (const f of C.factions) { const e = effetFaction(f.id, effet); if (e) return e; } return null; }
 function valeurQuelconque(effet, def) { const e = effetQuelconque(effet); return e ? (e.valeur !== undefined ? e.valeur : def) : def; }
-function rivale(fid) { const p = C.rivalites.paires.find((x) => x.includes(fid)); return p ? p.find((x) => x !== fid) : null; }
+function rivales(fid) { return C.rivalites.paires.filter((x) => x.includes(fid)).map((p) => p.find((x) => x !== fid)); }
 function niveauMefiance(fid) { let n = C.mefiance.niveaux[0]; C.mefiance.niveaux.forEach((x) => { if ((S.mefiance[fid] || 0) >= x.min) n = x; }); return n; }
 function changerRep(ileId, v) {
   if (!ileId || !v) return; const i = DB.iles[ileId]; const avant = palierIle(ileId).id;
   S.reputation.iles[ileId] = clamp((S.reputation.iles[ileId] || 0) + v, -100, 100);
   const gf = v * C.reputation.partageFaction;
   S.reputation.factions[i.faction] = clamp((S.reputation.factions[i.faction] || 0) + gf, -100, 100);
-  if (gf > 0) { const r = rivale(i.faction); if (r) S.reputation.factions[r] = clamp((S.reputation.factions[r] || 0) - gf * C.rivalites.taux, -100, 100); }
+  if (gf > 0) rivales(i.faction).forEach((r) => { S.reputation.factions[r] = clamp((S.reputation.factions[r] || 0) - gf * C.rivalites.taux, -100, 100); });
   const apres = palierIle(ileId);
   if (apres.id !== avant) { journal("⭐ <b>" + esc(i.nom) + "</b> : vous êtes désormais <b>" + esc(apres.nom) + "</b>."); toast("⭐ " + i.nom + " : " + apres.nom); }
 }
@@ -436,7 +437,7 @@ async function ecouterRumeur() {
 }
 
 /* ---------------- Légendes ---------------- */
-function prochainePage() { return C.legendes.filter((l) => l.page && !S.legendes.includes(l.id)).sort((a, b) => a.page - b.page)[0] || null; }
+function prochainePage() { return C.legendes.filter((l) => l.page && !l.special && !S.legendes.includes(l.id)).sort((a, b) => a.page - b.page)[0] || null; }
 function debloquerLegende(id, discret) {
   const l = id === "page" ? prochainePage() : DB.legendes[id];
   if (!l || S.legendes.includes(l.id)) return null;
@@ -492,7 +493,7 @@ function progressionJalon(j) {
   switch (c.type) {
     case "stat": v = S.stats[c.stat] || 0; break;
     case "ilesConnues": v = S.connues.length; break;
-    case "toutesIles": v = S.connues.length; cible = C.iles.length; break;
+    case "toutesIles": { const ids = C.iles.filter((i) => !c.region || regionDe(i) === c.region).map((i) => i.id); v = ids.filter((id) => S.connues.includes(id)).length; cible = ids.length; break; }
     case "fortune": v = S.or + S.coffre; break;
     case "navire": v = S.navire.type === c.navire || S.stats["navire_" + c.navire] ? 1 : 0; cible = 1; break;
     case "equipageComplet": v = navire().equipageMax >= 3 && S.equipage.length >= navire().equipageMax ? 1 : 0; cible = 1; break;
@@ -570,7 +571,7 @@ function vendre(it) {
 }
 
 /* ---------------- Contrats et quêtes ---------------- */
-function joursTrajet(a, b) { return dist(a, b) / Math.max(1, vitesseNavire()); }
+function joursTrajet(a, b) { return distRoute(a, b) / Math.max(1, vitesseNavire()); }
 function genererOffres(ileId) {
   const i = DB.iles[ileId]; const ca = C.contratsAleatoires; const offres = []; const pal = palierIle(ileId).effets;
   if (i.marche && pal.contrats !== false && marcheOuvert(ileId)) {
@@ -599,20 +600,24 @@ function prerequisOk(q) {
   const p = q.prerequis || {};
   if (p.quetes && !p.quetes.every((id) => S.quetesFaites.includes(id))) return false;
   if (p.reputationIle && !Object.entries(p.reputationIle).every(([il, v]) => (S.reputation.iles[il] || 0) >= v)) return false;
+  if (p.reputationFaction && !Object.entries(p.reputationFaction).every(([f, v]) => (S.reputation.factions[f] || 0) >= v)) return false;
+  if (p.passage && !S.passageOuvert) return false;
   return true;
 }
+function exclusifPris(q) { return q.exclusif && C.quetes.some((x) => x.id !== q.id && x.exclusif === q.exclusif && (S.quetesFaites.includes(x.id) || S.contrats.some((c) => c.id === x.id))); }
 function offresIci() {
   if (!S.ile) return [];
   const ouvert = effetPalier(S.ile, "contrats", true) !== false && effetPalier(S.ile, "quetes", true) !== false;
-  const quetes = ouvert ? C.quetes.filter((q) => q.origine === S.ile && !S.quetesFaites.includes(q.id) && !S.contrats.some((c) => c.id === q.id) && prerequisOk(q)) : [];
+  const quetes = ouvert ? C.quetes.filter((q) => q.origine === S.ile && !S.quetesFaites.includes(q.id) && !S.contrats.some((c) => c.id === q.id) && prerequisOk(q) && !exclusifPris(q)) : [];
   return quetes.concat(S.offres[S.ile] || []);
 }
 function accepter(o) {
   if (o.type === "decouverte") {
     (o.revele || []).forEach((id) => connaitre(id));
     S.quetesFaites.push(o.id);
-    journal("Quête « " + esc(o.titre) + " » : de nouvelles îles apparaissent sur la carte.");
-    toast("Carte mise à jour !"); rendreTout(); sauver(); return;
+    if (o.legende) debloquerLegende(o.legende);
+    journal("Quête « " + esc(o.titre) + " »" + ((o.revele || []).length ? " : de nouvelles îles apparaissent sur la carte." : " : notée dans le journal."));
+    if ((o.revele || []).length) toast("Carte mise à jour !"); rendreTout(); sauver(); planifierJalons(); return;
   }
   const c = Object.assign({}, o, { echeance: S.temps + o.delaiJours });
   S.contrats.push(c);
@@ -641,9 +646,17 @@ async function livrerContrats() {
     if (S.bilan) { S.bilan.livraisons++; S.bilan.gainLivraisons += gain; if (parfaite) S.bilan.parfaites++; }
     items.forEach(retirer); S.contrats = S.contrats.filter((x) => x.id !== c.id);
     if (!c.aleatoire) S.quetesFaites.push(c.id);
+    (c.revele || []).forEach((id) => connaitre(id));
     journal("Contrat « " + esc(c.titre) + " » livré : +" + gain + " or.");
     await modale({ titre: c.rare ? "Commande exceptionnelle livrée" : "Livraison", icone: parfaite ? "✨" : "📜", theme: rep >= 0 ? (c.rare || parfaite ? "tresor" : "succes") : "echec", html: "<p><b>" + esc(c.titre) + "</b></p><div class='gros-gain'>+" + gain + " 💰</div>", chips: lignes.concat(["Réputation " + (rep >= 0 ? "+" : "−") + Math.abs(arr(rep))]), boutons: [{ t: "Encaisser", primaire: true }] });
+    if (c.ouvrePassage && !S.passageOuvert) await ouvrirPassage();
   }
+}
+async function ouvrirPassage() {
+  S.passageOuvert = true; const P = C.carte.brume.passage; devoilerAutour(P.x, P.y, 12);
+  journal("🌫️ <b>La Passe des Brumes</b> est ouverte : l'Archipel de Nacre vous attend au sud.");
+  sauver(); rendreTout();
+  await modale({ titre: "La Passe des Brumes", icone: "🌫️", theme: "fantome", html: "<p>Vous tenez enfin la carte de la Passe. Au sud de l'Île aux Sternes, un chemin traverse la Brume jusqu'à l'<b>Archipel de Nacre</b>.</p><p class='muted'>Faites glisser la carte vers le sud. Les trajets entre les deux archipels passent automatiquement par la Passe.</p>", boutons: [{ t: "Voir la carte", primaire: true }] });
 }
 function verifierEcheances() {
   for (const c of [...S.contrats]) {
@@ -664,11 +677,25 @@ function decouvrirAutour(p) {
   C.iles.forEach((i) => { if (S.connues.includes(i.id)) return; const d = dist(p, i); if (d <= (i.cachee ? C.carte.rayonIleCachee : r)) connaitre(i.id); });
 }
 
+/* ---------------- Régions, Brume et routes ---------------- */
+function regionDe(p) { return (C.regions.find((r) => p.y >= r.y0 && p.y <= r.y1) || (p.y > C.carte.brume.y1 ? C.regions[C.regions.length - 1] : C.regions[0])).id; }
+function dansBrume(p) { const B = C.carte.brume; return p.y > B.y0 && p.y < B.y1; }
+function dansPassage(p) { const P = C.carte.brume.passage; return Math.abs(p.x - P.x) <= P.largeur / 2; }
+function cote(p) { const B = C.carte.brume; return p.y <= B.y0 ? "n" : p.y >= B.y1 ? "s" : "b"; }
+function routeVers(a, b) { // liste des points à suivre (la Passe s'intercale entre les deux archipels)
+  const ca = cote(a), cb = cote(b);
+  if (ca !== cb && ca !== "b" && cb !== "b") return [C.carte.brume.passage, b];
+  return [b];
+}
+function distRoute(a, b) { let d = 0, prec = a; routeVers(a, b).forEach((q) => { d += dist(prec, q); prec = q; }); return d; }
+
 /* ---------------- Voyage et temps ---------------- */
-function dangerPoint(p) { return p.ile ? DB.iles[p.ile].danger : C.carte.dangerEauxInconnues; }
+function dangerPoint(p) { return p.ile ? DB.iles[p.ile].danger : dansBrume(p) ? C.carte.brume.danger : C.carte.dangerEauxInconnues; }
 function partir(dest) {
-  const cible = dest.ile ? DB.iles[dest.ile] : dest;
-  S.voyage = { de: { x: S.pos.x, y: S.pos.y, ile: S.ile }, vers: { x: cible.x, y: cible.y, ile: dest.ile || null }, fait: 0, attente: 0, dist: dist(S.pos, cible), dernierDevoile: 0 };
+  const cible = dest.ile ? DB.iles[dest.ile] : dest; const pts = routeVers(S.pos, cible);
+  const etape = pts.length > 1 ? pts[0] : cible;
+  S.voyage = { de: { x: S.pos.x, y: S.pos.y, ile: S.ile }, vers: { x: etape.x, y: etape.y, ile: pts.length > 1 ? null : dest.ile || null }, fait: 0, attente: 0, dist: dist(S.pos, etape), dernierDevoile: 0 };
+  if (pts.length > 1) S.voyage.suite = dest.ile ? { ile: dest.ile } : { x: cible.x, y: cible.y };
   if (S.ile) { S.joursEnMer = 0; nouveauBilan(); } // depuis le large, les jours de mer et le bilan continuent jusqu'au prochain port
   S.quai = []; S.ile = null; selection = null; destination = null; vuePort = "accueil";
   journal("Départ vers <b>" + esc(dest.ile ? DB.iles[dest.ile].nom : "des eaux inconnues") + "</b>.");
@@ -694,8 +721,8 @@ async function interrompreNavigation() {
   const v = S.voyage; if (!v || modaleOuverte) return;
   const etaitEnPause = enPause; enPause = true; rendreHaut();
   const ici = posVoyage(); const origine = v.de.ile ? DB.iles[v.de.ile] : null;
-  const nomDest = v.vers.ile ? DB.iles[v.vers.ile].nom : "des eaux inconnues";
-  const reste = Math.max(0, (v.dist - v.fait) / Math.max(0.1, vitesseNavire()) + v.attente);
+  const fin = v.suite || v.vers; const nomDest = fin.ile ? DB.iles[fin.ile].nom : "des eaux inconnues";
+  const reste = Math.max(0, (v.dist - v.fait + (v.suite ? dist(v.vers, v.suite.ile ? DB.iles[v.suite.ile] : v.suite) : 0)) / Math.max(0.1, vitesseNavire()) + v.attente);
   const options = [{ t: "⚓ Jeter l'ancre ici", sous: "Le navire s'arrête en pleine mer ; choisissez ensuite un nouveau cap sur la carte", k: "ancre" }];
   if (origine) options.push({ t: "↩ Faire demi-tour vers " + origine.nom, sous: "≈ " + joursTrajet(ici, origine).toFixed(1) + " jour(s) de mer", k: "retour" });
   options.push({ t: "⛵ Continuer vers " + nomDest, sous: "Encore ≈ " + reste.toFixed(1) + " jour(s)", k: "continuer", primaire: true });
@@ -799,16 +826,17 @@ function contrebandeFaction(fid) { const ids = new Set(C.iles.filter((i) => i.fa
 function cibleDisponible(e) { return !e.cible || (e.cible === "cale" ? cales().length > 0 : sallesNavire().some((s) => s.type === e.cible)); }
 function tirerEvenement() {
   const v = S.voyage; const danger = (dangerPoint(v.de) + dangerPoint(v.vers)) / 2;
-  const possibles = C.evenements.filter((e) => e.chanceParJour > 0 && (!e.nuitSeulement || estNuit()) && (e.condition !== "contrebande" || contrebandeFaction(e.faction).length) && cibleDisponible(e) && !(e.faction && effetFaction(e.faction, "lettreDeMarque")) && (e.condition !== "pageAlienor" || prochainePage()));
+  const possibles = C.evenements.filter((e) => e.chanceParJour > 0 && (!e.nuitSeulement || estNuit()) && (e.condition !== "contrebande" || contrebandeFaction(e.faction).length) && cibleDisponible(e) && !(e.faction && effetFaction(e.faction, "lettreDeMarque")) && (e.condition !== "pageAlienor" || prochainePage()) && (!e.region || regionDe(S.pos) === e.region));
   const poids = (e) => {
     let w = e.chanceParJour;
     if (e.id === "patrouille" && e.faction) { const p = valeurFaction(e.faction, "patrouilles", 1); w *= (p === true ? 1 : p) * (niveauMefiance(e.faction).patrouilles || 1); }
     if (e.id === "hostile") w *= valeurQuelconque("pirates", 1);
-    if (e.fantome) w *= valeurQuelconque("feuxMorts", 1) * (aAmelio("lanterne") ? DB.amelios.lanterne.fantomes : 1);
+    if (e.fantome) w *= valeurQuelconque("feuxMorts", 1) * (aAmelio("lanterne") ? DB.amelios.lanterne.fantomes : 1) * (dansBrume(v.de) || dansBrume(v.vers) || dansBrume(S.pos) ? C.carte.brume.fantomes : 1);
     return w;
   };
   const total = possibles.reduce((s, e) => s + poids(e), 0); const base = possibles.reduce((s, e) => s + e.chanceParJour, 0);
-  const chance = Math.min(C.carte.chanceEvenementMax, total * (C.carte.chanceEvenementBase + danger * C.carte.chanceEvenementParDanger) * (base ? 1 : 0));
+  const calme = regionDe(S.pos) === "nacre" ? valeurQuelconque("recifsCalmes", 1) : 1;
+  const chance = Math.min(C.carte.chanceEvenementMax, total * (C.carte.chanceEvenementBase + danger * C.carte.chanceEvenementParDanger) * (base ? 1 : 0) * calme);
   if (Math.random() > chance) return;
   let r = Math.random() * total;
   for (const e of possibles) {
@@ -919,6 +947,8 @@ async function appliquerEffets(e, ctx, marin) {
   if (e.blesse && S.equipage.length) { const m = choisir(S.equipage); m.sante -= e.blesse; ctx.blesses.push(m); L.push(m.nom + " : blessure, santé −" + e.blesse); }
   if (e.blesseEnvoye && marin) { marin.sante -= e.blesseEnvoye; ctx.blesses.push(marin); L.push(marin.nom + " : blessure, santé −" + e.blesseEnvoye); }
   if (e.legende) { const l = debloquerLegende(e.legende, true); if (l) L.push("📖 Légende : " + l.titre); }
+  if (e.repFaction) { const [f, v] = e.repFaction; S.reputation.factions[f] = clamp((S.reputation.factions[f] || 0) + v, -100, 100); L.push("Réputation " + DB.factions[f].nom + " " + (v > 0 ? "+" : "") + v); }
+  if (e.stat) stat(e.stat);
   if (e.inspection) await inspection(e.inspection, null, true);
   return L;
 }
@@ -988,6 +1018,13 @@ async function inspection(fid, ileId, certaine) {
 /* ---------------- Arrivée au port ---------------- */
 async function arriver() {
   const v = S.voyage; enPause = true; S.pos = { x: v.vers.x, y: v.vers.y }; S.voyage = null;
+  if (!v.vers.ile && v.suite) { // traversée de la Passe : on enchaîne sur la seconde étape
+    const cible = v.suite.ile ? DB.iles[v.suite.ile] : v.suite;
+    S.voyage = { de: { x: S.pos.x, y: S.pos.y, ile: null }, vers: { x: cible.x, y: cible.y, ile: v.suite.ile || null }, fait: 0, attente: v.attente || 0, dist: dist(S.pos, cible), dernierDevoile: 0 };
+    devoilerAutour(S.pos.x, S.pos.y, 14); stat("passages"); journal("🌫️ Vous traversez la Passe des Brumes.");
+    if ((S.stats.passages || 0) === 1) { rendreTout(); await lancerEvenement(DB.evts.traversee); if (!S.voyage) return; }
+    planifierJalons(); enPause = false; sauver(); rendreTout(); return;
+  }
   if (!v.vers.ile) {
     S.ile = null; devoilerAutour(S.pos.x, S.pos.y, C.carte.rayonBrouillard + 4); decouvrirAutour(S.pos); stat("mouillages");
     journal("Vous jetez l'ancre au large, en eaux inconnues.");
@@ -1006,7 +1043,7 @@ async function arriver() {
   rendreTout(); afficherPanneau("p-port");
   if (i.surveillance > 0) await inspection(i.faction, i.id, false);
   await livrerContrats();
-  if (i.evenementArrivee && !S.evtArriveeFaits.includes(i.id)) { S.evtArriveeFaits.push(i.id); await lancerEvenement(DB.evts[i.evenementArrivee]); }
+  if (i.evenementArrivee && (!S.evtArriveeFaits.includes(i.id) || (i.repeterTantQue && !S.stats[i.repeterTantQue]))) { if (!S.evtArriveeFaits.includes(i.id)) S.evtArriveeFaits.push(i.id); await lancerEvenement(DB.evts[i.evenementArrivee]); }
   // Désertion
   for (const m of [...S.equipage]) if (S.equipage.length > 1 && m.moral < C.equipage.desertionSousMoral && Math.random() < C.equipage.chanceDesertion) { S.equipage = S.equipage.filter((x) => x !== m); journal("<b>" + esc(m.nom) + " a déserté.</b>"); toast(m.nom + " a déserté !"); }
   await montrerBilan(i);
@@ -1051,7 +1088,7 @@ function repos() {
 }
 function recruesDispo() {
   const i = ileAct(); if (i && effetFaction(i.faction, "pasDeRecrues")) return [];
-  return C.marins.filter((m) => m.prixRecrutement && !S.marinsPasses.includes(m.id)).slice(0, 2 + effetPalier(S.ile, "recrues", 0));
+  return C.marins.filter((m) => m.prixRecrutement && !S.marinsPasses.includes(m.id) && (!m.iles || m.iles.includes(S.ile))).sort((a, b) => (b.iles ? 1 : 0) - (a.iles ? 1 : 0)).slice(0, 2 + effetPalier(S.ile, "recrues", 0));
 }
 function prixRecrue(m) { const i = ileAct(); const f = i ? valeurFaction(i.faction, "recrutement", 1) : 1; return arr(m.prixRecrutement * (f === true ? 1 : f)); }
 function recruter(id) {
@@ -1714,45 +1751,92 @@ function finGlisseMarin(ev) {
 
 /* ---------- Panneau Carte ---------- */
 function navireCarte() { return "<g id='navCarte'><circle r='3.2' fill='#ffe08a' opacity='.35' class='pulse'/><g id='navCarteSens'><path d='M-2.6 0.4 L2.6 0.4 L2 1.6 L-2 1.6Z' fill='#5a3a1e' stroke='#2e1c0e' stroke-width='.2'/><path d='M0 0.4 V-3.4' stroke='#2e1c0e' stroke-width='.3'/><path d='M0.2 -3.2 Q2.2 -1.4 0.2 0.1Z' fill='#fbf1d8'/><path d='M-0.2 -2.8 Q-1.8 -1.3 -0.2 0.1Z' fill='#efe2c0'/></g></g>"; }
+let vueY = null, glisseCarte = null, carteGlissee = false, ecouteCarte = false;
+const HAUT_VUE = 140;
+function borneVue(y) { return clamp(y, 0, Math.max(0, C.carte.hauteur - HAUT_VUE)); }
+function centrerVue(y) { vueY = borneVue(y - HAUT_VUE / 2); appliquerVue(); }
+function appliquerVue() {
+  const el = $("#carteSvg"); if (el) el.setAttribute("viewBox", "0 " + vueY + " " + C.carte.largeur + " " + HAUT_VUE);
+  const ind = $("#cartePiste i"); if (ind) { const H = C.carte.hauteur; ind.style.top = (vueY / H * 100) + "%"; ind.style.height = (HAUT_VUE / H * 100) + "%"; }
+}
+function ecouterGlisseCarte() {
+  if (ecouteCarte) return; ecouteCarte = true;
+  window.addEventListener("pointermove", (ev) => {
+    if (!glisseCarte) return; const dy = ev.clientY - glisseCarte.y;
+    if (Math.abs(dy) > 6) carteGlissee = true;
+    if (carteGlissee) { vueY = borneVue(glisseCarte.v - dy * HAUT_VUE / glisseCarte.h); appliquerVue(); }
+  });
+  window.addEventListener("pointerup", () => { glisseCarte = null; });
+  window.addEventListener("pointercancel", () => { glisseCarte = null; });
+}
+function brumeSvg() {
+  const B = C.carte.brume, W = C.carte.largeur, P = B.passage; const h = B.y1 - B.y0;
+  const bande = (x0, x1) => x1 > x0 ? "<rect x='" + x0 + "' y='" + (B.y0 - 2) + "' width='" + (x1 - x0) + "' height='" + (h + 4) + "' fill='#eef1ee' filter='url(#flou)' opacity='.9'/><rect x='" + x0 + "' y='" + (B.y0 + 3) + "' width='" + (x1 - x0) + "' height='" + (h - 6) + "' fill='#f7f8f4' opacity='.85'/>" : "";
+  let g = "<g pointer-events='none'>";
+  if (S.passageOuvert) g += bande(-4, P.x - P.largeur / 2) + bande(P.x + P.largeur / 2, W + 4) + "<rect x='" + (P.x - P.largeur / 2) + "' y='" + B.y0 + "' width='" + P.largeur + "' height='" + h + "' fill='#eef1ee' opacity='.35' filter='url(#flou)'/><text x='" + P.x + "' y='" + (P.y + 1) + "' font-size='2.8' text-anchor='middle' fill='#2a4a52' font-family='IM Fell English SC, serif'>la Passe</text>";
+  else g += bande(-4, W + 4);
+  g += "<text x='" + (S.passageOuvert ? 62 : 50) + "' y='" + (B.y0 + h / 2 + 1.4) + "' font-size='4' text-anchor='middle' fill='#8a9a9a' font-family='IM Fell English SC, serif' letter-spacing='1'>~ la Brume ~</text></g>";
+  return g;
+}
+function ileCarte(i, r) {
+  if (i.forme === "atoll") return "<circle cx='" + i.x + "' cy='" + i.y + "' r='" + (r + 1.6) + "' fill='#e9d9a6' opacity='.55'/><circle cx='" + i.x + "' cy='" + i.y + "' r='" + (r + 0.4) + "' fill='#6fc9c2' stroke='#efe0b0' stroke-width='1.5'/><circle cx='" + (i.x - r * 0.55) + "' cy='" + (i.y - r * 0.75) + "' r='" + (r * 0.32) + "' fill='#6f9a4f'/><circle cx='" + (i.x + r * 0.8) + "' cy='" + (i.y + r * 0.3) + "' r='" + (r * 0.26) + "' fill='#6f9a4f'/>";
+  return "<ellipse cx='" + i.x + "' cy='" + (i.y + 0.4) + "' rx='" + (r + 1.8) + "' ry='" + (r + 1.1) + "' fill='#e9d9a6' opacity='.6'/><path d='M" + (i.x - r) + " " + i.y + " Q" + (i.x - r * 0.6) + " " + (i.y - r) + " " + i.x + " " + (i.y - r * 0.8) + " Q" + (i.x + r * 0.8) + " " + (i.y - r * 1.05) + " " + (i.x + r) + " " + i.y + " Q" + i.x + " " + (i.y + r * 0.8) + " " + (i.x - r) + " " + i.y + "Z' fill='" + (i.faction === "aucune" ? "#7a8b4a" : "#6f9a4f") + "' stroke='#3e5a2a' stroke-width='.4'/>";
+}
+function ligneRoute(a, b, attrs) { const pts = [a].concat(routeVers(a, b)); return "<polyline points='" + pts.map((q) => q.x + "," + q.y).join(" ") + "' fill='none' " + attrs + "/>"; }
 function rendreCarte() {
-  const p = $("#p-carte");
-  let svg = "<svg id='carteSvg' viewBox='0 0 100 140' xmlns='http://www.w3.org/2000/svg'>";
+  const p = $("#p-carte"); const W = C.carte.largeur, H = C.carte.hauteur;
+  if (vueY === null) vueY = borneVue(S.pos.y - HAUT_VUE / 2);
+  let svg = "<svg id='carteSvg' viewBox='0 " + vueY + " " + W + " " + HAUT_VUE + "' xmlns='http://www.w3.org/2000/svg'>";
   svg += "<defs><pattern id='vagues' width='8' height='6' patternUnits='userSpaceOnUse'><path d='M0 3 Q2 1 4 3 T8 3' fill='none' stroke='#79a9bd' stroke-width='0.3' opacity='.6'/><animateTransform attributeName='patternTransform' type='translate' from='0 0' to='8 0' dur='4s' repeatCount='indefinite'/></pattern>" +
     "<radialGradient id='mer' cx='50%' cy='45%' r='75%'><stop offset='0' stop-color='#4f87a0'/><stop offset='1' stop-color='#2d5a70'/></radialGradient>" +
-    "<mask id='masque'><rect width='100' height='140' fill='white'/><g id='trous'>" + S.brouillard.map(([x, y, r]) => "<circle cx='" + x + "' cy='" + y + "' r='" + r + "' fill='black'/>").join("") + "</g></mask>" +
+    "<mask id='masque'><rect width='" + W + "' height='" + H + "' fill='white'/><g id='trous'>" + S.brouillard.map(([x, y, r]) => "<circle cx='" + x + "' cy='" + y + "' r='" + r + "' fill='black'/>").join("") + "</g></mask>" +
     "<filter id='flou'><feGaussianBlur stdDeviation='2.2'/></filter></defs>";
-  svg += "<rect width='100' height='140' fill='url(#mer)'/><rect width='100' height='140' fill='url(#vagues)'/>";
+  svg += "<rect width='" + W + "' height='" + H + "' fill='url(#mer)'/><rect width='" + W + "' height='" + H + "' fill='url(#vagues)'/>";
   // Rose des vents
   svg += "<g class='rose' transform='translate(88 12)'><circle r='6' fill='none' stroke='#f3e6c4' stroke-width='.3'/><path d='M0 -6 L1 0 L0 6 L-1 0Z M-6 0 L0 1 L6 0 L0 -1Z' fill='#f3e6c4'/><text y='-7' font-size='2.6' text-anchor='middle' fill='#f3e6c4'>N</text></g>";
   // Routes
-  if (!S.voyage) S.connues.forEach((id) => { if (id === S.ile) return; const i = DB.iles[id]; const sel = destination && destination.ile === id; svg += "<line x1='" + S.pos.x + "' y1='" + S.pos.y + "' x2='" + i.x + "' y2='" + i.y + "' stroke='" + (sel ? "#ffe08a" : "#f3e6c4") + "' stroke-width='" + (sel ? 0.8 : 0.3) + "' stroke-dasharray='1.5 1.2' opacity='" + (sel ? 1 : 0.45) + "'>" + (sel ? "<animate attributeName='stroke-dashoffset' from='5.4' to='0' dur='1s' repeatCount='indefinite'/>" : "") + "</line>"; });
-  if (S.voyage) svg += "<line x1='" + S.voyage.de.x + "' y1='" + S.voyage.de.y + "' x2='" + S.voyage.vers.x + "' y2='" + S.voyage.vers.y + "' stroke='#ffe08a' stroke-width='0.7' stroke-dasharray='1.5 1.2'><animate attributeName='stroke-dashoffset' from='5.4' to='0' dur='1s' repeatCount='indefinite'/></line>";
-  if (destination && !destination.ile) svg += "<line x1='" + S.pos.x + "' y1='" + S.pos.y + "' x2='" + destination.x + "' y2='" + destination.y + "' stroke='#ffe08a' stroke-width='0.8' stroke-dasharray='1.5 1.2'><animate attributeName='stroke-dashoffset' from='5.4' to='0' dur='1s' repeatCount='indefinite'/></line><text x='" + destination.x + "' y='" + (destination.y + 1.5) + "' font-size='5' text-anchor='middle' fill='#b23a2e' font-weight='bold'>✕</text>";
+  const anim = "<animate attributeName='stroke-dashoffset' from='5.4' to='0' dur='1s' repeatCount='indefinite'/>";
+  if (!S.voyage) S.connues.forEach((id) => { if (id === S.ile) return; const i = DB.iles[id]; const sel = destination && destination.ile === id; if (!sel && regionDe(i) !== regionDe(S.pos)) return; svg += ligneRoute(S.pos, i, "stroke='" + (sel ? "#ffe08a" : "#f3e6c4") + "' stroke-width='" + (sel ? 0.8 : 0.3) + "' stroke-dasharray='1.5 1.2' opacity='" + (sel ? 1 : 0.45) + "'").replace("/>", ">" + (sel ? anim : "") + "</polyline>"); });
+  if (S.voyage) { svg += "<line x1='" + S.voyage.de.x + "' y1='" + S.voyage.de.y + "' x2='" + S.voyage.vers.x + "' y2='" + S.voyage.vers.y + "' stroke='#ffe08a' stroke-width='0.7' stroke-dasharray='1.5 1.2'>" + anim + "</line>"; if (S.voyage.suite) { const f = S.voyage.suite.ile ? DB.iles[S.voyage.suite.ile] : S.voyage.suite; svg += "<line x1='" + S.voyage.vers.x + "' y1='" + S.voyage.vers.y + "' x2='" + f.x + "' y2='" + f.y + "' stroke='#ffe08a' stroke-width='0.5' stroke-dasharray='1.5 1.2' opacity='.6'/>"; } }
+  if (destination && !destination.ile) svg += ligneRoute(S.pos, destination, "stroke='#ffe08a' stroke-width='0.8' stroke-dasharray='1.5 1.2'").replace("/>", ">" + anim + "</polyline>") + "<text x='" + destination.x + "' y='" + (destination.y + 1.5) + "' font-size='5' text-anchor='middle' fill='#b23a2e' font-weight='bold'>✕</text>";
   // Îles connues
   C.iles.filter((i) => S.connues.includes(i.id)).forEach((i) => {
     const r = 3 + (i.services.length > 3 ? 2 : i.services.length > 1 ? 1 : 0); const sel = destination && destination.ile === i.id; const ici = S.ile === i.id;
     svg += "<g data-ile='" + i.id + "' style='cursor:pointer'>" + (sel ? "<circle cx='" + i.x + "' cy='" + i.y + "' r='" + (r + 2) + "' fill='none' stroke='#ffe08a' stroke-width='.6' class='pulse'/>" : "") +
-      "<ellipse cx='" + i.x + "' cy='" + (i.y + 0.4) + "' rx='" + (r + 1.8) + "' ry='" + (r + 1.1) + "' fill='#e9d9a6' opacity='.6'/><path d='M" + (i.x - r) + " " + i.y + " Q" + (i.x - r * 0.6) + " " + (i.y - r) + " " + i.x + " " + (i.y - r * 0.8) + " Q" + (i.x + r * 0.8) + " " + (i.y - r * 1.05) + " " + (i.x + r) + " " + i.y + " Q" + i.x + " " + (i.y + r * 0.8) + " " + (i.x - r) + " " + i.y + "Z' fill='" + (i.faction === "aucune" ? "#7a8b4a" : "#6f9a4f") + "' stroke='#3e5a2a' stroke-width='.4'/>" +
+      ileCarte(i, r) +
       "<circle cx='" + (i.x + r * 0.7) + "' cy='" + (i.y - r * 0.8) + "' r='1.1' fill='" + DB.factions[i.faction].couleur + "' stroke='#fff' stroke-width='.3'/>" +
-      "<text x='" + i.x + "' y='" + (i.y + r + 4) + "' font-size='3.4' text-anchor='middle' fill='" + (ici ? "#ffe08a" : "#fff8e6") + "' stroke='#2a1e12' stroke-width='.7' paint-order='stroke' font-family='IM Fell English SC, serif'>" + esc(i.nom) + "</text>" +
+      "<text x='" + i.x + "' y='" + (i.y + r + 4) + "' font-size='3.4' text-anchor='middle' fill='" + (ici ? "#ffe08a" : "#fff8e6") + "' stroke='#2a1e12' stroke-width='.7' paint-order='stroke' font-family='IM Fell English SC, serif'>" + esc(i.nomCarte || i.nom) + "</text>" +
       (S.contrats.some((c) => c.destination === i.id) ? "<text x='" + (i.x - r - 1.5) + "' y='" + (i.y - r * 0.4) + "' font-size='3.2'>📜</text>" : "") +
       "<circle cx='" + i.x + "' cy='" + i.y + "' r='" + (r + 4) + "' fill='transparent'/></g>";
   });
   // Brouillard de guerre
-  svg += "<g mask='url(#masque)' pointer-events='none' opacity='.88'><rect width='100' height='140' fill='#e9d8ae'/><rect width='100' height='140' fill='#cdb27a' opacity='.35' filter='url(#flou)'/><text x='50' y='72' font-size='5' text-anchor='middle' fill='#a48a5a' font-family='IM Fell English SC, serif' opacity='.8'>Terra incognita</text></g>";
-  svg += "<rect id='nuitCarte' width='100' height='140' fill='#0a1430' opacity='0' pointer-events='none'/>";
+  svg += "<g mask='url(#masque)' pointer-events='none' opacity='.88'><rect width='" + W + "' height='" + H + "' fill='#e9d8ae'/><rect width='" + W + "' height='" + H + "' fill='#cdb27a' opacity='.35' filter='url(#flou)'/>" + C.regions.map((r) => "<text x='50' y='" + ((r.y0 + r.y1) / 2 + 2) + "' font-size='5' text-anchor='middle' fill='#a48a5a' font-family='IM Fell English SC, serif' opacity='.8'>Terra incognita</text>").join("") + "</g>";
+  svg += brumeSvg();
+  svg += "<rect id='nuitCarte' width='" + W + "' height='" + H + "' fill='#0a1430' opacity='0' pointer-events='none'/>";
   // Étiquette de durée sur la route choisie
   if (destination && !S.voyage) { const cible = destination.ile ? DB.iles[destination.ile] : destination; const mx = (S.pos.x + cible.x) / 2, my = (S.pos.y + cible.y) / 2; const txt = joursTrajet(S.pos, cible).toFixed(1) + " j"; svg += "<g pointer-events='none'><rect x='" + (mx - 5) + "' y='" + (my - 2.6) + "' width='10' height='4.4' rx='2' fill='#2a1e12' opacity='.85'/><text x='" + mx + "' y='" + (my + 0.8) + "' font-size='2.8' text-anchor='middle' fill='#ffe08a' font-weight='bold'>" + txt + "</text></g>"; }
   svg += "<g pointer-events='none'>" + navireCarte() + "</g>";
-  svg += "<text x='4' y='136' font-size='3' fill='#fff8e6' opacity='.85' font-family='IM Fell English SC, serif'>Les Hauts-Fonds de Sel</text></svg>";
-  p.innerHTML = "<h2>Carte</h2><div class='carte-cadre'>" + svg + "</div><div id='infoDest' class='bloc'>" + infoDestination() + "</div>";
+  svg += C.regions.map((r) => "<text x='4' y='" + (r.y1 - 4) + "' font-size='3' fill='#fff8e6' opacity='.85' font-family='IM Fell English SC, serif' pointer-events='none'>" + esc(r.nom) + "</text>").join("") + "</svg>";
+  const pan = H > HAUT_VUE;
+  p.innerHTML = "<h2>Carte</h2><div class='carte-cadre'>" + svg + (pan ? "<div id='cartePiste' title='Faites glisser la carte'><i></i></div><button class='carte-centrer' title='Recentrer sur le navire'>⌖</button>" : "") + "</div><div id='infoDest' class='bloc'>" + infoDestination() + "</div>";
   carteRendue = { brouillard: S.brouillard.length, connues: S.connues.length };
   const el = $("#carteSvg");
+  ecouterGlisseCarte(); appliquerVue();
+  el.addEventListener("pointerdown", (ev) => { glisseCarte = { y: ev.clientY, v: vueY, h: el.getBoundingClientRect().height }; carteGlissee = false; });
+  el.addEventListener("wheel", (ev) => { if (!pan) return; ev.preventDefault(); vueY = borneVue(vueY + ev.deltaY * 0.08); appliquerVue(); }, { passive: false });
+  const bc = p.querySelector(".carte-centrer"); if (bc) bc.onclick = () => centrerVue(S.pos.y);
   el.addEventListener("click", (ev) => {
+    if (carteGlissee) { carteGlissee = false; return; }
     if (S.voyage) return;
     const g = ev.target.closest("[data-ile]");
     if (g) destination = g.dataset.ile === S.ile ? null : { ile: g.dataset.ile };
-    else { const pt = el.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY; const q = pt.matrixTransform(el.getScreenCTM().inverse()); destination = { x: clamp(q.x, 2, 98), y: clamp(q.y, 2, 138) }; }
+    else {
+      const pt = el.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY; const q = pt.matrixTransform(el.getScreenCTM().inverse());
+      const d = { x: clamp(q.x, 2, W - 2), y: clamp(q.y, 2, H - 2) }; const B = C.carte.brume;
+      if (!S.passageOuvert && (d.y > B.y0 - 1) !== (S.pos.y > B.y0 - 1)) { toast("🌫️ La Brume barre la route. Il vous faut une carte de la Passe."); return; }
+      if (dansBrume(d) && !dansPassage(d)) { toast("🌫️ Impossible de jeter l'ancre dans la Brume."); return; }
+      destination = d;
+    }
     vibrer(6); rendreCarte(); rendreCale();
   });
   lierInfo(); majCarteVoyage();
@@ -1770,6 +1854,7 @@ function infoDestination() {
     if (i.interdits.length) h += "<div class='muted'>Contrebande ici : " + i.interdits.map((x) => DB.items[x].icone + " " + esc(DB.items[x].nom)).join(", ") + "</div>";
     if (illegaux.length) h += "<div style='margin-top:4px'><span class='tag rouge'>⚠️ " + illegaux.length + " item(s) interdit(s) à bord</span></div>";
   } else h += "<div class='nom titre' style='font-size:22px;color:var(--bois)'>🧭 Exploration</div><div class='muted'>Eaux inconnues : on y découvre des îles, mais le danger y est plus grand.</div>";
+  if (routeVers(S.pos, cible).length > 1) h += "<div style='margin-top:4px'><span class='tag' style='background:#3f7a6f;color:#fff'>🌫️ Route par la Passe des Brumes</span></div>";
   const vj = joursDeVivres();
   const na = noteArrimage();
   h += "<div class='puces' style='margin:10px 0'><div class='puce'>⏳ Durée<b>" + j.toFixed(1) + " j</b></div><div class='puce'>☠️ Danger<b>" + niveau(danger) + "</b></div><div class='puce'>🍞 Vivres<b style='color:" + (vj < j + 1 ? "var(--danger)" : "inherit") + "'>" + (vj >= 99 ? "—" : vj.toFixed(1) + " j") + "</b></div></div>";
@@ -1792,6 +1877,7 @@ function majCarteVoyage() {
   }
   let sens = 1; if (S.voyage) sens = S.voyage.vers.x < S.voyage.de.x ? -1 : 1; else if (destination) sens = (destination.ile ? DB.iles[destination.ile].x : destination.x) < S.pos.x ? -1 : 1;
   nav.setAttribute("transform", "translate(" + S.pos.x + " " + S.pos.y + ")");
+  if (S.voyage && !glisseCarte && (S.pos.y < vueY + 14 || S.pos.y > vueY + HAUT_VUE - 14)) centrerVue(S.pos.y);
   $("#navCarteSens").setAttribute("transform", "scale(" + sens + " 1) rotate(" + (S.voyage && !enPause ? Math.sin(Date.now() / 500) * 6 : 0) + ")");
   $("#nuitCarte").setAttribute("opacity", estNuit() ? 0.28 : 0);
   document.querySelectorAll("#infoDest .vitesses button").forEach((b) => b.classList.toggle("actif", b.dataset.v === "p" ? enPause : !enPause && +b.dataset.v === vitesseIdx));
@@ -1801,13 +1887,20 @@ function majCarteVoyage() {
 let ongletQuetes = "quetes";
 function barreRep(v) { const x = (v + 100) / 2; return "<div class='barre-rep'><i style='left:" + x + "%'></i>" + C.paliersReputation.map((p) => "<b style='left:" + (p.min + 100) / 2 + "%'></b>").join("") + "</div>"; }
 function tagPalier(v) { const p = palierDe(v); return "<span class='tag' style='background:" + p.couleur + ";color:#fff'>⭐ " + esc(p.nom) + "</span>"; }
-function etapeFaite(e) { return e.quete ? S.quetesFaites.includes(e.quete) : (S.stats[e.stat] || 0) >= (e.valeur || 1); }
+function etapeFaite(e) { return e.ou ? e.ou.some((id) => S.quetesFaites.includes(id)) : e.quete ? S.quetesFaites.includes(e.quete) : (S.stats[e.stat] || 0) >= (e.valeur || 1); }
 function texteEtape(e) {
+  if (e.ou) {
+    const qs = e.ou.map((id) => DB.quetes[id]); const enCours = qs.find((q) => S.contrats.some((c) => c.id === q.id));
+    if (enCours) return { titre: e.texte, ou: "En cours : « " + enCours.titre + " », livrer à " + DB.iles[enCours.destination].nom };
+    const dispo = qs.filter((q) => prerequisOk(q));
+    if (!dispo.length) return { titre: e.texte, ou: "🔒 Après l'étape précédente" };
+    return { titre: e.texte, ou: dispo.map((q) => "« " + q.titre + " » à " + (S.connues.includes(q.origine) ? DB.iles[q.origine].nom : "une île inconnue") + (q.prerequis.reputationFaction ? " (réputation " + Object.entries(q.prerequis.reputationFaction).map(([f, v]) => DB.factions[f].nom + " ≥ " + v).join(", ") + ")" : "")).join(" ou ") };
+  }
   if (!e.quete) return { titre: e.texte, ou: "" };
   const q = DB.quetes[e.quete]; const enCours = S.contrats.find((c) => c.id === q.id);
   let ou = "";
   if (enCours) ou = "En cours : livrer à " + DB.iles[q.destination].nom;
-  else if (!prerequisOk(q)) ou = "🔒 Après l'étape précédente";
+  else if (!prerequisOk(q)) ou = q.prerequis.passage && !S.passageOuvert ? "🔒 Après l'ouverture de la Passe" : "🔒 Après l'étape précédente";
   else ou = S.connues.includes(q.origine) ? "Proposée à " + DB.iles[q.origine].nom : "Proposée sur une île encore inconnue";
   return { titre: q.titre, ou };
 }
@@ -1845,7 +1938,8 @@ function rendreQuetes() {
         if (S.legendes.includes(l.id)) h += "<details class='leg-entree'><summary>" + esc(l.titre) + "</summary><p>" + esc(l.texte) + "</p></details>";
         else {
           let indice = "Une histoire encore inconnue.";
-          if (l.taverne) indice = S.connues.includes(l.taverne) ? "Se raconte à la taverne de " + DB.iles[l.taverne].nom + "." : "Se raconte dans une taverne que vous ne connaissez pas encore.";
+          if (l.indice) indice = l.indice;
+          else if (l.taverne) indice = S.connues.includes(l.taverne) ? "Se raconte à la taverne de " + DB.iles[l.taverne].nom + "." : "Se raconte dans une taverne que vous ne connaissez pas encore.";
           else if (l.ile) indice = S.connues.includes(l.ile) ? "À découvrir en accostant à " + DB.iles[l.ile].nom + "." : "À découvrir sur une île encore inconnue.";
           else if (l.page) indice = "Une page perdue : on dit que la Persévérance hante la Brume, la nuit.";
           else indice = "On la vit en mer, la nuit.";
@@ -1872,11 +1966,11 @@ function rendreQuetes() {
     });
     h += "<h3>⚑ Factions</h3>";
     C.factions.filter((f) => f.id !== "aucune").forEach((f) => {
-      const v = S.reputation.factions[f.id] || 0; const r = rivale(f.id); const nm = niveauMefiance(f.id);
+      const v = S.reputation.factions[f.id] || 0; const r = rivales(f.id); const nm = niveauMefiance(f.id);
       const effets = C.factionsPaliers.filter((x) => x.faction === f.id);
       h += "<div class='bloc'><div class='d-tete'><div class='nom'><span class='pastille-f' style='background:" + f.couleur + "'></span>" + esc(f.nom) + "</div><b>" + (v >= 0 ? "+" : "") + arr(v) + "</b></div>" + barreRep(v) +
         (f.description ? "<div class='sous'>" + esc(f.description) + "</div>" : "") + (f.chef ? "<div class='sous'>👤 " + esc(f.chef.nom) + ", " + esc(f.chef.titre) + "</div>" : "") +
-        "<div class='sous'>" + (r ? "Rivale : " + esc(DB.factions[r].nom) + " (perd " + pct(C.rivalites.taux) + " de vos gains ici)" : "") + "</div>" +
+        "<div class='sous'>" + (r.length ? (r.length > 1 ? "Rivales : " : "Rivale : ") + r.map((x) => esc(DB.factions[x].nom)).join(", ") + " (perd" + (r.length > 1 ? "ent" : "") + " " + pct(C.rivalites.taux) + " de vos gains ici)" : "") + "</div>" +
         "<div class='sous'>Méfiance : <span class='tag' style='background:" + nm.couleur + ";color:#fff'>" + esc(nm.nom) + " · " + arr(S.mefiance[f.id] || 0) + "</span></div>" +
         "<ul class='effets-f'>" + effets.map((x) => { const actif = x.seuil > 0 ? v >= x.seuil : v <= x.seuil; return "<li class='" + (actif ? (x.seuil > 0 ? "actif" : "malus") : "") + "'>" + (actif ? (x.seuil > 0 ? "✔ " : "⚠ ") : (x.seuil > 0 ? "🔒 " : "· ")) + "<b>" + (x.seuil > 0 ? "+" : "") + x.seuil + "</b> " + esc(x.texte) + "</li>"; }).join("") + "</ul></div>";
     });
@@ -1993,7 +2087,7 @@ function demarrer() {
   window.addEventListener("resize", () => { if (glisse || Math.abs(window.innerWidth - largeurPrec) < 20) return; largeurPrec = window.innerWidth; rendreTout(); });
   requestAnimationFrame(boucle);
   if (!reprise) intro().then(aide);
-  window.__jeu = { get S() { return S; }, DB, debloquerLegende, ecouterLegende, tirerEvenement, verifierJalons, changerRep, palierIle, noteArrimage, ecouterRumeur, genererOffres, progressionJalon, personnaliser, creerEvenementMarche, interrompreNavigation, jeterAncre, competence, competenceSalle, placementConseille, posteTempete, posteRepos, deplacerMarin, statutMarin, changerDeCale, desequilibre, stabilite, centreGravite, calePrincipale, cales, vitesseNavire, avancer, arriver, finDeJournee, lancerEvenement, naufrage, rendreTout, raisonPlacement, appliquerGravite, creerItem, retirer, placerAuto };
+  window.__jeu = { get S() { return S; }, DB, debloquerLegende, ouvrirPassage, routeVers, partir, connaitre, offresIci, accepter, centrerVue, ecouterLegende, tirerEvenement, verifierJalons, changerRep, palierIle, noteArrimage, ecouterRumeur, genererOffres, progressionJalon, personnaliser, creerEvenementMarche, interrompreNavigation, jeterAncre, competence, competenceSalle, placementConseille, posteTempete, posteRepos, deplacerMarin, statutMarin, changerDeCale, desequilibre, stabilite, centreGravite, calePrincipale, cales, vitesseNavire, avancer, arriver, finDeJournee, lancerEvenement, naufrage, rendreTout, raisonPlacement, appliquerGravite, creerItem, retirer, placerAuto };
 }
 demarrer();
 })();

@@ -3,6 +3,71 @@
 Toutes les modifications notables du jeu sont listées ici, de la plus récente à la plus ancienne.
 Chaque version correspond à la valeur `VERSION` de `sw.js` (par exemple `psl-0.3.0` pour la 0.3.0).
 
+## [0.6.1] — 2026-11-08
+
+### Ajouté
+- **L'Archipel de Nacre**, la deuxième région : des atolls au sud, derrière la Brume. Il compte cinq îles :
+  - Port-Royal, à la Couronne ;
+  - La Perlière, à la Couronne ;
+  - L'Anneau des Mille Pirogues, aux Coralins ;
+  - Le Lagon Noir, à l'Étoile Noire, caché ;
+  - Le Récif du Silence, sans maître, caché.
+
+  Les atolls sont dessinés en anneau sur la carte.
+- **Carte qu'on fait glisser** : le monde mesure désormais 100 × 245. On fait glisser la carte au doigt ou à la souris (molette sur ordinateur).
+  - Une piste sur le côté indique la partie affichée, et le bouton ⌖ recentre la carte sur le navire.
+  - En voyage, la carte suit le navire.
+- **La Brume** sépare les deux régions. Tant que la Passe n'est pas ouverte, impossible d'aller au sud.
+- **Chaîne « La Passe du Sud »** :
+  1. La rumeur de la Passe, à la taverne de l'Île aux Sternes.
+  2. Obtenir la route, au choix. Les deux quêtes s'excluent.
+     - **Voie légale** : « La lettre de passage », à Vasque. Il faut 15 de réputation auprès de la Couronne.
+     - **Voie de l'ombre** : « La carte des passeurs », à Lunebaie, en livrant du faux-sel.
+  3. Traverser la Passe des Brumes.
+- **Trajets par la Passe** : entre les deux régions, la route passe automatiquement par la Passe, en deux étapes et sans arrêt. Les durées en tiennent compte, et la Brume est plus dangereuse et plus hantée. La première traversée déclenche l'événement « Dans la Brume ».
+- **Les Coralins**, 5ᵉ faction, chef : la Vieille Anémone.
+  - Recrutement à moitié prix à +20.
+  - Chant des coraux à +40 : deux fois moins d'incidents en mer dans l'archipel.
+  - Plus de recrues à −30.
+- **Rivalités multiples** : la Couronne a maintenant deux rivales, l'Étoile Noire et les Coralins.
+- **Nouvelles marchandises** :
+  - perles : monopole royal ;
+  - perles noires : contrebande chez la Couronne et les Fanaux ;
+  - corail : fragile ;
+  - vanille : périssable, craint l'eau ;
+  - coprah.
+
+  Les atolls manquent de bois, de sel et de métal.
+- **Nouvelles quêtes** :
+  - « Du bois pour le fort » ;
+  - « Les perles du Vice-Roi » ;
+  - « Le sel des Coralins » ;
+  - deux découvertes, qui révèlent le Récif du Silence et le Lagon Noir.
+- **Deux nouvelles chaînes de quêtes** :
+  - « Entre le Vice-Roi et les Coralins » ;
+  - « Le secret du Récif ».
+- **La tour du Récif** : on peut retenter de la gravir à chaque passage tant qu'on n'a pas réussi. Elle livre la page 4 du journal d'Aliénor et un coffre des Bâtisseurs.
+- **Nouveaux événements dans l'archipel** :
+  - Cyclone sur les lagons ;
+  - Des pirogues à l'horizon (échange de vanille) ;
+  - Un plongeur en détresse.
+- **Deux recrues coralines** à l'Anneau : Tiv Anneau-Clair et Sauge Lagon.
+- **10 nouvelles légendes**, dont une nouvelle catégorie « L'Archipel de Nacre ».
+- **Nouveaux jalons** :
+  - « Au-delà de la Brume », avec le pavillon Nacre ;
+  - « Maître des atolls », avec la coque Lagon.
+
+  « Terra cognita » ne compte plus que les îles des Hauts-Fonds de Sel.
+- **Nouveaux réglages dans `js/config.js`** :
+  - `regions` ;
+  - `carte.largeur`, `carte.hauteur` et `carte.brume` (bande, Passe, danger, fantômes) ;
+  - champs des îles : `forme`, `nomCarte`, `repeterTantQue` ;
+  - champs des quêtes : `exclusif`, `ouvrePassage`, `revele` sur les livraisons, `legende` sur les découvertes, et les prérequis `reputationFaction` et `passage` ;
+  - étape `ou` dans les chaînes ;
+  - champ `region` des événements, et effets `repFaction` et `stat` ;
+  - champ `iles` des marins ;
+  - champs `indice` et `special` des légendes.
+
 ## [0.6.0] — 2026-11-08
 
 ### Ajouté
