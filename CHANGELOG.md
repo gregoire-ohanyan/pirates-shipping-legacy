@@ -3,6 +3,17 @@
 Toutes les modifications notables du jeu sont listées ici, de la plus récente à la plus ancienne.
 Chaque version correspond à la valeur `VERSION` de `sw.js` (par exemple `psl-0.3.0` pour la 0.3.0).
 
+## [0.4.2] — 2026-11-08
+
+### Ajouté
+- **Interrompre la navigation en cours**, avec le bouton « 🧭 Interrompre la navigation… » de la vue de navigation (onglet Port) ou de la carte. Le temps se met en pause et trois choix s'offrent :
+  - **Jeter l'ancre ici** : le navire s'arrête en pleine mer, puis on choisit un nouveau cap sur la carte (île connue ou point à explorer) ;
+  - **Faire demi-tour** vers l'île de départ, avec la durée du retour affichée ;
+  - **Continuer** la traversée, avec la durée restante affichée.
+
+### Modifié
+- Repartir depuis le large ne remet plus à zéro les jours de mer : les salaires de toute la traversée sont payés au prochain port.
+
 ## [0.4.1] — 2026-11-08
 
 ### Ajouté

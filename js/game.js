@@ -1,5 +1,5 @@
 /* =====================================================================
-   PIRATES : SHIPPING LEGACY — MOTEUR DU PROTOTYPE 0.4.1
+   PIRATES : SHIPPING LEGACY — MOTEUR DU PROTOTYPE 0.4.2
    Ce fichier ne contient aucune valeur d'équilibrage : tout est lu
    dans js/config.js (window.CONFIG).
    ===================================================================== */
@@ -460,7 +460,8 @@ function dangerPoint(p) { return p.ile ? DB.iles[p.ile].danger : C.carte.dangerE
 function partir(dest) {
   const cible = dest.ile ? DB.iles[dest.ile] : dest;
   S.voyage = { de: { x: S.pos.x, y: S.pos.y, ile: S.ile }, vers: { x: cible.x, y: cible.y, ile: dest.ile || null }, fait: 0, attente: 0, dist: dist(S.pos, cible), dernierDevoile: 0 };
-  S.quai = []; S.ile = null; S.joursEnMer = 0; selection = null; destination = null; vuePort = "accueil";
+  if (S.ile) S.joursEnMer = 0; // depuis le large, les jours de mer continuent de compter jusqu'au prochain port (salaires)
+  S.quai = []; S.ile = null; selection = null; destination = null; vuePort = "accueil";
   journal("Départ vers <b>" + esc(dest.ile ? DB.iles[dest.ile].nom : "des eaux inconnues") + "</b>.");
   vitesseIdx = 0; enPause = false; sauver(); rendreTout(); afficherPanneau("p-carte");
 }
@@ -479,6 +480,29 @@ async function demanderDepart() {
     if (r !== 0) return;
   }
   partir(destination);
+}
+async function interrompreNavigation() {
+  const v = S.voyage; if (!v || modaleOuverte) return;
+  const etaitEnPause = enPause; enPause = true; rendreHaut();
+  const ici = posVoyage(); const origine = v.de.ile ? DB.iles[v.de.ile] : null;
+  const nomDest = v.vers.ile ? DB.iles[v.vers.ile].nom : "des eaux inconnues";
+  const reste = Math.max(0, (v.dist - v.fait) / Math.max(0.1, vitesseNavire()) + v.attente);
+  const options = [{ t: "⚓ Jeter l'ancre ici", sous: "Le navire s'arrête en pleine mer ; choisissez ensuite un nouveau cap sur la carte", k: "ancre" }];
+  if (origine) options.push({ t: "↩ Faire demi-tour vers " + origine.nom, sous: "≈ " + joursTrajet(ici, origine).toFixed(1) + " jour(s) de mer", k: "retour" });
+  options.push({ t: "⛵ Continuer vers " + nomDest, sous: "Encore ≈ " + reste.toFixed(1) + " jour(s)", k: "continuer", primaire: true });
+  const r = await modale({ titre: "Interrompre la navigation ?", icone: "🧭", theme: "mer", html: "<p>Cap actuel : <b>" + esc(nomDest) + "</b>.</p><p class='muted'>En pleine mer, le temps ne passe pas tant que le navire est à l'ancre. Les salaires seront payés au prochain port.</p>", boutons: options });
+  const k = options[r].k;
+  if (k === "continuer") { enPause = etaitEnPause; rendreHaut(); majVoyage(); return; }
+  jeterAncre();
+  if (k === "retour") partir({ ile: origine.id });
+}
+function jeterAncre() {
+  const p = posVoyage(); const v = S.voyage;
+  S.voyage = null; S.ile = null; S.pos = { x: p.x, y: p.y }; enPause = true; destination = null;
+  devoilerAutour(p.x, p.y); decouvrirAutour(p);
+  journal("Navigation interrompue en route vers <b>" + esc(v.vers.ile ? DB.iles[v.vers.ile].nom : "des eaux inconnues") + "</b> : le navire jette l'ancre en pleine mer.");
+  toast("⚓ À l'ancre en pleine mer. Choisissez un nouveau cap sur la carte.");
+  sauver(); rendreTout(); afficherPanneau("p-carte");
 }
 function posVoyage() { const v = S.voyage; const t = v.dist ? clamp(v.fait / v.dist, 0, 1) : 1; return { x: v.de.x + (v.vers.x - v.de.x) * t, y: v.de.y + (v.vers.y - v.de.y) * t }; }
 
@@ -921,10 +945,10 @@ function couleurCiel(h) {
 /* ---------- Panneau Port ---------- */
 function rendrePort() {
   const p = $("#p-port");
-  if (S.voyage) { if (p.dataset.mode !== "voyage") { p.dataset.mode = "voyage"; p.innerHTML = vueVoyage(); p.querySelectorAll("[data-v]").forEach((b) => b.onclick = () => regler(b.dataset.v)); } majVoyage(); return; }
+  if (S.voyage) { if (p.dataset.mode !== "voyage") { p.dataset.mode = "voyage"; p.innerHTML = vueVoyage(); p.querySelectorAll("[data-v]").forEach((b) => b.onclick = () => regler(b.dataset.v)); p.querySelectorAll("[data-interrompre]").forEach((b) => b.onclick = interrompreNavigation); } majVoyage(); return; }
   p.dataset.mode = "port";
   const i = ileAct(); let h = "";
-  if (!i) h = "<h2>Au large</h2><div class='bloc'><p style='margin:0 0 8px'>Ancré en eaux inconnues. Choisissez un nouveau cap.</p><button class='primaire' data-a='carte' style='width:100%'>🗺️ Ouvrir la carte</button></div>" + journalHtml();
+  if (!i) h = "<h2>Au large</h2><div class='bloc'><p style='margin:0 0 8px'>À l'ancre en pleine mer. Choisissez un nouveau cap sur la carte : une île connue ou un point à explorer.</p><button class='primaire' data-a='carte' style='width:100%'>🗺️ Ouvrir la carte</button></div>" + journalHtml();
   else if (vuePort === "accueil") h = vueAccueil(i);
   else h = "<div class='retour'><button data-a='accueil'>‹ Port</button><h2>" + titreLieu(vuePort, i) + "</h2></div>" + ({ capitainerie: vueCapitainerie, marche: vueMarche, chantier: vueChantier, taverne: vueTaverne, banque: vueBanque }[vuePort])(i);
   p.innerHTML = h;
@@ -1069,7 +1093,8 @@ function vueVoyage() {
     "<rect id='scNuit' width='360' height='150' fill='#0a1430' opacity='0' pointer-events='none'/></svg></div>";
   h += "<div class='bloc'><div class='trajet'><span>" + esc(de) + "</span><div class='barre'><i id='vgBarre'></i><b id='vgNav'>⛵</b></div><span>" + esc(vers) + "</span></div>" +
     "<div class='grille2' style='margin-top:12px'><div class='muted'>Arrivée dans<br><b id='vgEta' style='font-size:16px;color:var(--encre)'></b></div><div class='muted'>Vitesse<br><b id='vgVit' style='font-size:16px;color:var(--encre)'></b></div></div>" +
-    "<div class='vitesses'><button data-v='p'>⏸ Pause</button>" + C.temps.vitesses.map((x, k) => "<button data-v='" + k + "'>x" + x + "</button>").join("") + "</div></div>";
+    "<div class='vitesses'><button data-v='p'>⏸ Pause</button>" + C.temps.vitesses.map((x, k) => "<button data-v='" + k + "'>x" + x + "</button>").join("") + "</div>" +
+    "<button class='btnInterrompre' data-interrompre='1'>🧭 Interrompre la navigation…</button></div>";
   h += "<p class='muted'>Les événements mettent le jeu en pause. Vous pouvez réorganiser la cale pendant la traversée.</p>";
   if (S.contrats.length) h += "<h3>📌 Contrats en cours</h3>" + S.contrats.map(contratEnCours).join("");
   return h + journalHtml();
@@ -1457,7 +1482,7 @@ function rendreCarte() {
   lierInfo(); majCarteVoyage();
 }
 function infoDestination() {
-  if (S.voyage) return "<div class='nom'>⛵ En route vers " + esc(S.voyage.vers.ile ? DB.iles[S.voyage.vers.ile].nom : "des eaux inconnues") + "</div><div class='vitesses'><button data-v='p'>⏸</button>" + C.temps.vitesses.map((x, k) => "<button data-v='" + k + "'>x" + x + "</button>").join("") + "</div>";
+  if (S.voyage) return "<div class='nom'>⛵ En route vers " + esc(S.voyage.vers.ile ? DB.iles[S.voyage.vers.ile].nom : "des eaux inconnues") + "</div><div class='vitesses'><button data-v='p'>⏸</button>" + C.temps.vitesses.map((x, k) => "<button data-v='" + k + "'>x" + x + "</button>").join("") + "</div><button class='btnInterrompre' data-interrompre='1'>🧭 Interrompre la navigation…</button>";
   if (!destination) return "<span class='muted'>👆 Touchez une île pour préparer un trajet, ou touchez la mer et le brouillard pour partir explorer.</span>";
   const cible = destination.ile ? DB.iles[destination.ile] : destination; const j = joursTrajet(S.pos, cible);
   const danger = (dangerPoint({ ile: S.ile }) + dangerPoint(destination)) / 2; let h = "";
@@ -1476,6 +1501,7 @@ function infoDestination() {
 function lierInfo() {
   const bp = $("#bPartir"); if (bp) bp.onclick = demanderDepart;
   document.querySelectorAll("#infoDest [data-v]").forEach((b) => b.onclick = () => regler(b.dataset.v));
+  document.querySelectorAll("#infoDest [data-interrompre]").forEach((b) => b.onclick = interrompreNavigation);
 }
 function majCarteVoyage() {
   const nav = $("#navCarte"); if (!nav) return;
@@ -1536,7 +1562,7 @@ let minuteurToast = null;
 function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.add("vu"); clearTimeout(minuteurToast); minuteurToast = setTimeout(() => el.classList.remove("vu"), 2400); }
 
 async function menu() {
-  const r = await modale({ titre: "Menu", icone: "☰", html: "<p class='muted'>Prototype 0.4.1 · la partie est sauvegardée automatiquement dans ce navigateur.</p>", boutons: [{ t: "Reprendre", primaire: true }, { t: "Comment jouer" }, { t: "Nouvelle partie" }] });
+  const r = await modale({ titre: "Menu", icone: "☰", html: "<p class='muted'>Prototype 0.4.2 · la partie est sauvegardée automatiquement dans ce navigateur.</p>", boutons: [{ t: "Reprendre", primaire: true }, { t: "Comment jouer" }, { t: "Nouvelle partie" }] });
   if (r === 1) aide();
   if (r === 2) { const c = await modale({ titre: "Nouvelle partie ?", icone: "⚠️", theme: "echec", html: "<p>La partie en cours sera effacée.</p>", boutons: [{ t: "Recommencer", primaire: true }, { t: "Annuler" }] }); if (c === 0) { nouvellePartie(); destination = null; selection = null; enPause = true; vuePort = "accueil"; precedent = null; rendreTout(); afficherPanneau("p-port"); } }
 }
@@ -1567,7 +1593,7 @@ function demarrer() {
   window.addEventListener("resize", () => { if (glisse || Math.abs(window.innerWidth - largeurPrec) < 20) return; largeurPrec = window.innerWidth; rendreTout(); });
   requestAnimationFrame(boucle);
   if (!reprise) aide();
-  window.__jeu = { get S() { return S; }, DB, competence, competenceSalle, placementConseille, posteTempete, posteRepos, deplacerMarin, statutMarin, changerDeCale, desequilibre, stabilite, centreGravite, calePrincipale, cales, vitesseNavire, avancer, arriver, finDeJournee, lancerEvenement, naufrage, rendreTout, raisonPlacement, appliquerGravite, creerItem, retirer, placerAuto };
+  window.__jeu = { get S() { return S; }, DB, interrompreNavigation, jeterAncre, competence, competenceSalle, placementConseille, posteTempete, posteRepos, deplacerMarin, statutMarin, changerDeCale, desequilibre, stabilite, centreGravite, calePrincipale, cales, vitesseNavire, avancer, arriver, finDeJournee, lancerEvenement, naufrage, rendreTout, raisonPlacement, appliquerGravite, creerItem, retirer, placerAuto };
 }
 demarrer();
 })();
