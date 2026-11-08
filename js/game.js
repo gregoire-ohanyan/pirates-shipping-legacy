@@ -1,5 +1,5 @@
 /* =====================================================================
-   PIRATES : SHIPPING LEGACY — MOTEUR DU PROTOTYPE 0.4
+   PIRATES : SHIPPING LEGACY — MOTEUR DU PROTOTYPE 0.4.1
    Ce fichier ne contient aucune valeur d'équilibrage : tout est lu
    dans js/config.js (window.CONFIG).
    ===================================================================== */
@@ -518,7 +518,7 @@ function finDeJournee(enMer) {
       m.moral += eq.moralParJourEnMer;
       m.sante += eq.soinParJour * medecine / Math.max(1, S.equipage.length);
       const st = statutMarin(m);
-      if (st === "patient") m.sante += C.salles.soinPatientParJour * (1 + competenceSalle("medecine", m.salle));
+      if (st === "patient") { const avant = m.sante; m.sante += C.salles.soinPatientParJour * (1 + competenceSalle("medecine", m.salle)); if (avant < 95 && m.sante >= 95) { journal(esc(m.nom) + " est rétabli et peut reprendre son poste."); toast("🩹 " + m.nom + " est rétabli : remettez ce marin à son poste."); } }
       if (st === "repos") { m.sante += C.salles.reposSanteParJour; m.moral += C.salles.reposMoralParJour; }
       m.traits.forEach((t) => { const tr = DB.traits[t]; if (tr.moralJourSansRhum && !rhum) m.moral += tr.moralJourSansRhum; });
     });
@@ -562,26 +562,75 @@ function verifierEquipage() {
 
 /* ---------------- Événements ---------------- */
 function contrebandeFaction(fid) { const ids = new Set(C.iles.filter((i) => i.faction === fid).flatMap((i) => i.interdits)); return S.cale.filter((it) => ids.has(it.id)); }
+function cibleDisponible(e) { return !e.cible || (e.cible === "cale" ? cales().length > 0 : sallesNavire().some((s) => s.type === e.cible)); }
 function tirerEvenement() {
   const v = S.voyage; const danger = (dangerPoint(v.de) + dangerPoint(v.vers)) / 2;
-  const possibles = C.evenements.filter((e) => e.chanceParJour > 0 && (!e.nuitSeulement || estNuit()) && (e.condition !== "contrebande" || contrebandeFaction(e.faction).length));
+  const possibles = C.evenements.filter((e) => e.chanceParJour > 0 && (!e.nuitSeulement || estNuit()) && (e.condition !== "contrebande" || contrebandeFaction(e.faction).length) && cibleDisponible(e));
   const total = possibles.reduce((s, e) => s + e.chanceParJour, 0);
   const chance = Math.min(C.carte.chanceEvenementMax, total * (C.carte.chanceEvenementBase + danger * C.carte.chanceEvenementParDanger));
   if (Math.random() > chance) return;
   let r = Math.random() * total; for (const e of possibles) { r -= e.chanceParJour; if (r <= 0) { lancerEvenement(e); return; } }
 }
 function chanceTest(t) { return t ? clamp(t.base + t.parPoint * competence(t.competence), 0.05, 0.95) : 1; }
+function chanceMarin(t, m) { return t ? clamp(t.base + t.parPoint * apportBrut(m, t.competence) * formeMarin(m), 0.05, 0.95) : 1; }
+function salleEnvoi(envoi, ctx) {
+  if (envoi.salle === "cible") return ctx.cible;
+  const s = sallesNavire().find((x) => x.type === envoi.salle || x.id === envoi.salle); return s ? s.id : null;
+}
+async function choisirMarin(c, ctx, e) {
+  const dest = salleEnvoi(c.envoi, ctx); const nomDest = dest ? nomSalle(salleDef(dest)) : "";
+  const liste = [...S.equipage].sort((a, b) => chanceMarin(c.test, b) - chanceMarin(c.test, a));
+  const r = await modale({ titre: "Qui envoyer ?", icone: e.icone || "❗", theme: e.theme || "mer",
+    html: "<p>" + esc(c.texte) + (nomDest ? " — <b>" + esc(nomDest) + "</b>" : "") + "</p><p class='muted'>La réussite dépend de la compétence « " + esc(nomCompetence(c.envoi.competence)) + " » du marin choisi.</p>",
+    boutons: liste.map((m) => {
+      const ap = apportBrut(m, c.envoi.competence); const ici = salleDef(m.salle);
+      return { t: m.nom, chance: c.test ? chanceMarin(c.test, m) : null, sous: (ap > 0 ? nomCompetence(c.envoi.competence) + " " + fmt2(ap) : "Pas de compétence utile") + (c.test ? " · réussite " + pct(chanceMarin(c.test, m)) : "") + " · " + (ici ? nomSalle(ici) : "—") + (m.sante < 50 ? " · ❤️ " + arr(m.sante) : "") };
+    }).concat([{ t: "↩ Choisir une autre option" }]) });
+  return r < liste.length ? liste[r] : null;
+}
 async function lancerEvenement(e) {
-  const choixIdx = await modale({ titre: e.titre, icone: e.icone || "❗", theme: e.theme || "mer", html: "<p>" + esc(e.texte) + "</p>",
-    boutons: e.choix.map((c) => ({ t: c.texte, chance: c.test ? chanceTest(c.test) : null, sous: c.test ? "Réussite " + pct(chanceTest(c.test)) + " · " + nomCompetence(c.test.competence) + ouCompetence(c.test.competence) : "Sans risque d'échec" })) });
-  const c = e.choix[choixIdx]; const ok = Math.random() < chanceTest(c.test);
+  const ctx = { cible: null, blesses: [] };
+  if (e.cible === "cale") ctx.cible = choisir(cales()).id;
+  else if (e.cible) { const s = sallesNavire().find((x) => x.type === e.cible); ctx.cible = s ? s.id : null; }
+  const txt = (t) => String(t || "").split("{salle}").join(ctx.cible ? nomSalle(salleDef(ctx.cible)) : "la cale");
+  const options = e.choix.filter((c) => !c.requiert || sallesNavire().some((s) => s.type === c.requiert));
+  let c = null, marin = null;
+  while (!c) {
+    const idx = await modale({ titre: e.titre, icone: e.icone || "❗", theme: e.theme || "mer", html: "<p>" + esc(txt(e.texte)) + "</p>",
+      boutons: options.map((o) => o.envoi
+        ? { t: "👤 " + txt(o.texte), sous: "Choisir un marin · " + nomCompetence(o.envoi.competence) + " · meilleure chance " + pct(Math.max(...S.equipage.map((m) => chanceMarin(o.test, m)))) }
+        : { t: txt(o.texte), chance: o.test ? chanceTest(o.test) : null, sous: o.test ? "Réussite " + pct(chanceTest(o.test)) + " · " + nomCompetence(o.test.competence) + ouCompetence(o.test.competence) : "Sans risque d'échec" }) });
+    const o = options[idx];
+    if (o.envoi) { marin = await choisirMarin(o, ctx, e); if (!marin) continue; }
+    c = o;
+  }
+  const lignes = [];
+  if (marin) { // le marin rejoint la salle (s'il y a de la place) ou y va le temps de la manœuvre
+    const dest = salleEnvoi(c.envoi, ctx); const sd = salleDef(dest);
+    if (sd && sd.places > 0 && marin.salle !== dest) { deplacerMarin(marin, dest); lignes.push(marin.nom + " rejoint : " + nomSalle(sd)); }
+    else if (sd && marin.salle !== dest) lignes.push(marin.nom + " y va le temps de la manœuvre");
+  }
+  const chance = c.test ? (marin ? chanceMarin(c.test, marin) : chanceTest(c.test)) : 1;
+  const ok = Math.random() < chance;
   const eff = ok ? c.succes : (c.echec || c.succes);
-  const lignes = await appliquerEffets(eff);
-  journal("<b>" + esc(e.titre) + "</b> — " + esc(c.texte) + " : " + (ok ? "réussite" : "échec") + ".");
-  if (eff.texte || lignes.length) await modale({ titre: c.test ? (ok ? "Réussite !" : "Échec…") : e.titre, icone: c.test ? (ok ? "✅" : "❌") : (e.icone || "⚓"), theme: c.test ? (ok ? "succes" : "echec") : (e.theme || "mer"), html: eff.texte ? "<p>" + esc(eff.texte) + "</p>" : "", chips: lignes, boutons: [{ t: "Continuer", primaire: true }] });
+  lignes.push(...await appliquerEffets(eff, ctx, marin));
+  journal("<b>" + esc(e.titre) + "</b> — " + esc(txt(c.texte)) + (marin ? " (" + esc(marin.nom) + ")" : "") + " : " + (ok ? "réussite" : "échec") + ".");
+  if (eff.texte || lignes.length) await modale({ titre: c.test ? (ok ? "Réussite !" : "Échec…") : e.titre, icone: c.test ? (ok ? "✅" : "❌") : (e.icone || "⚓"), theme: c.test ? (ok ? "succes" : "echec") : (e.theme || "mer"), html: (marin ? portraitSvg(marin.portrait, 44) : "") + (eff.texte ? "<p>" + esc(txt(eff.texte)) + "</p>" : ""), chips: lignes, boutons: [{ t: "Continuer", primaire: true }] });
   verifierEquipage();
   if (S.navire.coque <= 0) { await naufrage(); return; }
+  await proposerInfirmerie(ctx.blesses);
   sauver(); rendreTout();
+}
+async function proposerInfirmerie(blesses) {
+  const inf = sallesNavire().find((s) => typeSalle(s).action === "soin"); if (!inf) return;
+  for (const m of [...new Set(blesses)]) {
+    if (!S.equipage.includes(m) || m.salle === inf.id || apportBrut(m, "medecine") > 0 || m.sante >= C.salles.infirmerieSousSante) continue;
+    const plein = placesLibres(inf.id) <= 0; const gain = arr(C.salles.soinPatientParJour * (1 + competenceSalle("medecine", inf.id)));
+    const r = await modale({ titre: m.nom + " a besoin de soins", icone: "🩹", theme: "danger",
+      html: portraitSvg(m.portrait, 52) + "<p>Santé : <b>" + arr(m.sante) + "</b>. À l'" + esc(nomSalle(inf).toLowerCase()) + " : environ <b>+" + gain + " santé par jour</b>, mais plus de travail à son poste (" + esc(nomSalle(salleDef(m.salle))) + ").</p>",
+      boutons: [{ t: "Conduire à l'" + nomSalle(inf).toLowerCase(), primaire: true, sous: plein ? "Infirmerie pleine : échange avec un occupant" : "" }, { t: "Rester à son poste" }] });
+    if (r === 0) { deplacerMarin(m, inf.id); journal(esc(m.nom) + " rejoint l'infirmerie."); }
+  }
 }
 function ouCompetence(c) { // salles où la compétence compte à 100 %
   if (C.salles.competencesGlobales.includes(c)) return "";
@@ -589,13 +638,15 @@ function ouCompetence(c) { // salles où la compétence compte à 100 %
   return s.length ? " (" + [...new Set(s)].join(", ") + ")" : " (aucune salle adaptée)";
 }
 function nomCompetence(c) { const r = C.roles.liste.find((x) => x.competence === c); return r ? r.nom : c; }
-async function appliquerEffets(e) {
-  const L = [];
-  if ((e.coque && e.coque < 0) || e.choc || e.eau) secousse();
+async function appliquerEffets(e, ctx, marin) {
+  const L = []; ctx = ctx || { cible: null, blesses: [] };
+  if ((e.coque && e.coque < 0) || e.choc || e.eau || e.eauCible || e.chocCible) secousse();
   const surcharge = ratioCharge() > 1 ? C.cale.surchargeDegats : 1;
   if (e.coque) { const v = e.coque < 0 ? e.coque * surcharge : e.coque; S.navire.coque = clamp(S.navire.coque + v, 0, coqueMax()); L.push("Coque " + (v > 0 ? "+" : "") + arr(v)); }
   if (e.choc) L.push(...degatsChoc(e.choc * surcharge));
   if (e.eau) L.push(...degatsEau(e.eau * surcharge));
+  if (e.chocCible) L.push(...degatsChoc(e.chocCible * surcharge, ctx.cible));
+  if (e.eauCible) L.push(...degatsEau(e.eauCible * surcharge, ctx.cible));
   if (e.moral) { S.equipage.forEach((m) => { m.moral += e.moral * (e.moral < 0 && m.traits.includes("superstitieux") ? DB.traits.superstitieux.moralDrame : 1); }); L.push("Moral " + (e.moral > 0 ? "+" : "") + e.moral); }
   if (e.sante) { S.equipage.forEach((m) => { m.sante += e.sante; }); L.push("Santé de l'équipage " + (e.sante > 0 ? "+" : "") + e.sante); }
   if (e.cohesion) { S.cohesion = clamp(S.cohesion + e.cohesion, 0, 100); L.push("Cohésion " + (e.cohesion > 0 ? "+" : "") + e.cohesion); }
@@ -611,14 +662,15 @@ async function appliquerEffets(e) {
     const [id, n] = e.gagner;
     for (let k = 0; k < n; k++) { const it = creerItem(id); if (placerAuto(it)) L.push(DB.items[id].nom + " rangé dans la cale"); else if (S.ile) { S.quai.push(it); L.push(DB.items[id].nom + " posé à terre : faites-lui de la place dans la cale"); } else L.push("Pas de place pour " + DB.items[id].nom + " : perdu"); }
   }
-  if (e.blesse && S.equipage.length) { const m = choisir(S.equipage); m.sante -= e.blesse; L.push(m.nom + " est blessé (santé −" + e.blesse + ")"); }
+  if (e.blesse && S.equipage.length) { const m = choisir(S.equipage); m.sante -= e.blesse; ctx.blesses.push(m); L.push(m.nom + " : blessure, santé −" + e.blesse); }
+  if (e.blesseEnvoye && marin) { marin.sante -= e.blesseEnvoye; ctx.blesses.push(marin); L.push(marin.nom + " : blessure, santé −" + e.blesseEnvoye); }
   if (e.inspection) await inspection(e.inspection, null, true);
   return L;
 }
 function reductionArrimage(caleId) { return 1 - Math.min(0.8, C.cale.reductionArrimage * competenceSalle("arrimage", caleId)); }
-function degatsChoc(I) {
+function degatsChoc(I, caleId) {
   const stab = stabilite(); let n = 0, total = 0;
-  S.cale.forEach((it) => {
+  S.cale.filter((it) => !caleId || it.cale === caleId).forEach((it) => {
     if (!DB.items[it.id].fragile) return;
     const p = poidsAuDessus(it);
     const d = I * alea(0.6, 1.2) * (1 + Math.max(0, p - C.cale.poidsFragile) / C.cale.poidsFragile) * (1.5 - stab) * reductionArrimage(it.cale);
@@ -626,14 +678,19 @@ function degatsChoc(I) {
   });
   return n ? ["Items fragiles secoués : " + n + " (−" + arr(total / n) + " % d'état en moyenne)"] : [];
 }
-function degatsEau(I) {
+function degatsEau(I, caleId) {
+  // Sans caleId : l'humidité générale touche surtout les fonds humides.
+  // Avec caleId (voie d'eau) : l'eau entre dans CETTE cale et monte depuis le bas, même dans une cale sèche.
   let n = 0, total = 0; const div = aAmelio("baches") ? DB.amelios.baches.diviseurEau : 1;
-  S.cale.forEach((it) => {
+  S.cale.filter((it) => !caleId || it.cale === caleId).forEach((it) => {
     if (!DB.items[it.id].craintEau) return;
-    const d = I * (auFond(it) ? alea(0.8, 1.3) : alea(0.1, 0.3)) * (caleDe(it).fondHumide ? 1 : 0.2) / div * reductionArrimage(it.cale);
+    const k = caleDe(it); const bas = it.y + dims(it).h - 1 >= k.rangees - 1;
+    const f = caleId ? (bas ? alea(0.8, 1.3) : alea(0.15, 0.35)) : (auFond(it) ? alea(0.8, 1.3) : alea(0.1, 0.3)) * (k.fondHumide ? 1 : 0.2);
+    const d = I * f / div * reductionArrimage(it.cale);
     it.etat = clamp(it.etat - d, 0, 100); n++; total += d;
   });
-  return n ? ["Items mouillés : " + n + " (−" + arr(total / n) + " % d'état en moyenne)"] : [];
+  const ou = caleId ? " dans " + nomSalle(salleDef(caleId)) : "";
+  return n ? ["Items mouillés" + ou + " : " + n + " (−" + arr(total / n) + " % d'état en moyenne)"] : (caleId ? ["Rien qui craigne l'eau" + ou] : []);
 }
 
 /* ---------------- Inspection ---------------- */
@@ -1057,12 +1114,20 @@ function silhouetteSvg(n) {
   };
   const f = formes[n.silhouette] || formes.cotre; const idc = "coque-" + n.id;
   let s = "<svg class='coupe-svg' viewBox='0 " + y0 + " 366 " + (H - y0) + "' preserveAspectRatio='none' aria-hidden='true'><defs><linearGradient id='bois-" + n.id + "' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#7a5132'/><stop offset='0.7' stop-color='#4a2d17'/><stop offset='1' stop-color='#2e1a0b'/></linearGradient><clipPath id='" + idc + "'><path d='" + f.coque + "'/></clipPath></defs>";
-  s += "<rect x='0' y='" + (eau - 6) + "' width='366' height='" + (H - eau + 6) + "' fill='#2b5469'/>" + f.greement;
+  s += f.greement;
   s += "<path d='" + f.coque + "' fill='url(#bois-" + n.id + ")' stroke='#24150a' stroke-width='2'/>";
   s += "<g clip-path='url(#" + idc + ")'><path d='" + f.bande + "' stroke='" + coul + "' stroke-width='9' fill='none'/>" + f.lignes.map((y) => "<path d='M 0 " + y + " Q 180 " + (y + 8) + " 366 " + (y - 24) + "' stroke='rgba(0,0,0,0.28)' stroke-width='1.5' fill='none'/>").join("") + "</g>" + f.fenetres;
   s += "<text x='180' y='" + (cp.quille - 12) + "' text-anchor='middle' font-family='IM Fell English SC, Georgia, serif' font-size='12' fill='#e7c977'>" + esc(S.navire.nom || n.nomParDefaut) + "</text>";
-  s += "<path class='vague1' d='M 0 " + eau + " q 12 -6 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 t 24 0 V " + H + " H 0 Z' fill='#3e7590' opacity='0.72'/>";
   return s + "</svg>";
+}
+function niveauEau(n) { const cp = n.coupe; return clamp(cp.quille - 26 - ratioCharge() * 16, cp.pont + 30, cp.quille - 8); }
+function merSvg(n, devant) {
+  // La mer reste horizontale : seul le navire s'incline. Elle déborde largement pour remplir tout le cadre.
+  const H = n.coupe.hauteur; const y0 = hautCoupe(n); const eau = niveauEau(n);
+  const vagues = (y, amp) => { let d = "M -420 " + y; for (let k = 0; k < 50; k++) d += " q 12 " + (-amp) + " 24 0"; return d + " V " + (H + 200) + " H -420 Z"; };
+  return "<svg class='coupe-mer' viewBox='0 " + y0 + " 366 " + (H - y0) + "' preserveAspectRatio='none' aria-hidden='true'>" +
+    (devant ? "<path class='vague1' d='" + vagues(eau, 6) + "' fill='#3e7590' opacity='0.72'/>"
+            : "<rect x='-420' y='" + (eau - 6) + "' width='1206' height='" + (H + 200) + "' fill='#2b5469'/><path class='vague2' d='" + vagues(eau - 8, 4) + "' fill='#2b5469' opacity='0.6'/>") + "</svg>";
 }
 function miniPortrait(m, t, deplacable) {
   return "<span class='mp st-" + statutMarin(m) + "' " + (deplacable ? "data-marin='" + m.id + "' " : "") + "title='" + esc(m.nom + " — " + STATUTS[statutMarin(m)]) + "' style='width:" + t + "px;height:" + t + "px'>" + portraitSvg(m.portrait, t) + "</span>";
@@ -1098,8 +1163,10 @@ function rendreCale() {
   h += "<div class='tags' style='margin:-4px 0 8px'><span class='tag' style='background:" + n.couleurCoque + ";color:#fff'>" + esc(n.nom) + "</span><span class='tag'>" + S.equipage.length + "/" + n.equipageMax + " marins</span><span class='tag'>" + n.canons + " canons</span><span class='tag'>" + cales().length + " cale(s)</span></div>";
   // Vue en coupe
   const y0 = hautCoupe(n); const Hv = H - y0;
-  h += "<div class='coupe-cadre'><div class='coupe' style='aspect-ratio:366/" + Hv + ";width:100%;max-width:560px'><div class='coupe-in' style='transform:rotate(" + (dq * 2.2).toFixed(2) + "deg)'>" + silhouetteSvg(n) +
-    sallesNavire().map((x) => boiteSalle(x, H, y0)).join("") +
+  const incl = "transform:rotate(" + (dq * 2.2).toFixed(2) + "deg)";
+  h += "<div class='coupe-cadre'><div class='coupe' style='aspect-ratio:366/" + Hv + ";width:100%;max-width:560px'>" + merSvg(n, false) +
+    "<div class='coupe-in' style='" + incl + "'>" + silhouetteSvg(n) + "</div>" + merSvg(n, true) +
+    "<div class='coupe-in' style='" + incl + "'>" + sallesNavire().map((x) => boiteSalle(x, H, y0)).join("") +
     (cg ? "<span class='cg " + (Math.abs(dq) < 0.15 ? "ok" : "") + "' role='img' aria-label='Centre de gravité' style='left:" + (cg.x / 366 * 100) + "%;top:" + ((cg.y - y0) / Hv * 100) + "%'>+</span>" : "") +
     "</div></div><span class='lbl-bord g'>◀ POUPE</span><span class='lbl-bord d'>PROUE ▶</span></div>";
   // Jauges du navire
@@ -1469,7 +1536,7 @@ let minuteurToast = null;
 function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.add("vu"); clearTimeout(minuteurToast); minuteurToast = setTimeout(() => el.classList.remove("vu"), 2400); }
 
 async function menu() {
-  const r = await modale({ titre: "Menu", icone: "☰", html: "<p class='muted'>Prototype 0.4 · la partie est sauvegardée automatiquement dans ce navigateur.</p>", boutons: [{ t: "Reprendre", primaire: true }, { t: "Comment jouer" }, { t: "Nouvelle partie" }] });
+  const r = await modale({ titre: "Menu", icone: "☰", html: "<p class='muted'>Prototype 0.4.1 · la partie est sauvegardée automatiquement dans ce navigateur.</p>", boutons: [{ t: "Reprendre", primaire: true }, { t: "Comment jouer" }, { t: "Nouvelle partie" }] });
   if (r === 1) aide();
   if (r === 2) { const c = await modale({ titre: "Nouvelle partie ?", icone: "⚠️", theme: "echec", html: "<p>La partie en cours sera effacée.</p>", boutons: [{ t: "Recommencer", primaire: true }, { t: "Annuler" }] }); if (c === 0) { nouvellePartie(); destination = null; selection = null; enPause = true; vuePort = "accueil"; precedent = null; rendreTout(); afficherPanneau("p-port"); } }
 }

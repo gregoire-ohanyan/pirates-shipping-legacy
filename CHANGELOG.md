@@ -3,6 +3,19 @@
 Toutes les modifications notables du jeu sont listées ici, de la plus récente à la plus ancienne.
 Chaque version correspond à la valeur `VERSION` de `sw.js` (par exemple `psl-0.3.0` pour la 0.3.0).
 
+## [0.4.1] — 2026-11-08
+
+### Ajouté
+- **Événements qui demandent un marin** : certains choix (« 👤 ») font choisir QUI envoyer. La liste montre, pour chaque marin, sa compétence utile, sa chance de réussite et son poste actuel. La réussite dépend de ce marin seul, pas de toute la salle. Le marin reste dans la salle visée s'il y a de la place (échange si elle est pleine), sinon il y va le temps de la manœuvre.
+- **Événements qui visent une salle** : la voie d'eau touche une cale précise (« De l'eau monte dans la Cale sèche ! ») et ne mouille que sa cargaison, même dans une cale sèche ; l'incendie se déclare dans la coquerie. Un événement n'a lieu que si le navire possède la salle visée.
+- Nouveaux événements : **Le feu à bord !** (coquerie) et **Un homme à la mer !** (envoyer quelqu'un lancer un cordage depuis le pont).
+- Récif en vue : nouveau choix « Envoyer un marin guider depuis la vigie », proposé seulement si le navire a une vigie.
+- **Conduire un blessé à l'infirmerie** : après un événement, si un marin tombe sous 80 de santé et que le navire a une infirmerie, le jeu propose de l'y conduire. Quand un patient est rétabli, un message invite à le remettre à son poste.
+- Nouveaux paramètres dans `js/config.js` : pour les événements `cible`, et pour les choix `envoi` et `requiert` ; nouveaux effets `eauCible`, `chocCible` et `blesseEnvoye` ; `salles.infirmerieSousSante`.
+
+### Corrigé
+- Vue en coupe : la mer reste horizontale et remplit tout le cadre ; seul le navire s'incline selon l'assiette. Auparavant, la mer penchait avec la coque et laissait une bande immobile en dessous.
+
 ## [0.4.0] — 2026-11-08
 
 ### Ajouté

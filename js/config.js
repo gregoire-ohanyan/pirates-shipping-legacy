@@ -173,7 +173,8 @@ window.CONFIG = {
     competencesGlobales: ["commerce"], // compétences qui comptent quelle que soit la salle
     soinPatientParJour: 6,        // santé gagnée par jour par un patient, x (1 + médecine de l'infirmerie)
     reposSanteParJour: 4,         // au dortoir
-    reposMoralParJour: 4
+    reposMoralParJour: 4,
+    infirmerieSousSante: 80       // après un événement, on propose d'emmener à l'infirmerie un blessé sous cette santé
   },
 
   /* ------------------------------------------------------------------
@@ -452,16 +453,25 @@ window.CONFIG = {
      chanceParJour : probabilité de base par jour de trajet (multipliée par le danger de la route)
      nuitSeulement : true = seulement de nuit
      condition     : "contrebande" = seulement si la cale contient un item interdit chez cette faction (patrouille)
+     cible         : salle touchée par l'événement : "cale" (une cale au hasard) ou un type de salle ("coquerie"…).
+                     L'événement n'a lieu que si le navire possède cette salle. "{salle}" dans les textes = son nom.
      choix         : liste de choix proposés au joueur
        test        : { competence: id, base: chance de base, parPoint: chance gagnée par point de compétence }
                      (sans test = réussite automatique)
+       envoi       : { salle: "cible" ou un type de salle, competence: id } = le joueur choisit UN marin à envoyer.
+                     La réussite dépend alors de la compétence de ce marin (pas de toute la salle).
+                     Le marin reste dans la salle si elle a de la place, sinon il y va le temps de la manœuvre.
+       requiert    : type de salle nécessaire pour proposer ce choix (ex. "vigie")
        succes / echec : effets appliqués
      EFFETS possibles :
        coque (+/-), choc (intensité des dégâts aux fragiles), eau (intensité des dégâts d'eau),
        moral (+/- à tous), sante (+/- à tous), cohesion (+/-), or (+/-), orPourcent (- % de l'or à bord),
        jours (jours de trajet en plus), jeter (fraction de la cargaison perdue, 0 à 1),
        gagner: [idItem, quantité], blesse (santé perdue par un marin au hasard),
-       inspection: id de faction (déclenche une inspection), texte (message affiché)
+       inspection: id de faction (déclenche une inspection), texte (message affiché),
+       eauCible / chocCible : comme eau / choc, mais seulement dans la salle ciblée,
+       blesseEnvoye : santé perdue par le marin envoyé, coqueCible : comme coque.
+     Après un événement, un marin blessé peut être conduit à l'infirmerie (si le navire en a une).
      ------------------------------------------------------------------ */
   evenements: [
     { id: "tempete", titre: "Tempête !", icone: "⛈️", theme: "orage", chanceParJour: 0.12,
@@ -493,18 +503,45 @@ window.CONFIG = {
         { texte: "Manœuvrer entre les rochers", test: { competence: "vigie", base: 0.4, parPoint: 0.35 },
           succes: { texte: "Le navire glisse entre les récifs sans une égratignure." },
           echec:  { coque: -20, choc: 20, eau: 15, texte: "Un raclement sinistre : la coque a touché." } },
+        { texte: "Envoyer un marin guider depuis la vigie", requiert: "vigie", envoi: { salle: "vigie", competence: "vigie" },
+          test: { competence: "vigie", base: 0.45, parPoint: 0.45 },
+          succes: { texte: "Depuis le nid-de-pie, la passe est limpide : vous la franchissez sans heurt." },
+          echec:  { coque: -12, choc: 12, texte: "Les indications arrivent trop tard : la coque frotte le récif." } },
         { texte: "Faire un large détour (1 jour)", test: null,
           succes: { jours: 1, texte: "Prudence est mère de sûreté." } }
       ] },
 
-    { id: "voie_eau", titre: "Voie d'eau !", icone: "💦", theme: "mer", chanceParJour: 0.05,
-      texte: "De l'eau monte au fond de la cale.",
+    { id: "voie_eau", titre: "Voie d'eau !", icone: "💦", theme: "mer", chanceParJour: 0.05, cible: "cale",
+      texte: "De l'eau monte dans la {salle} !",
       choix: [
-        { texte: "Colmater la brèche", test: { competence: "charpente", base: 0.35, parPoint: 0.45 },
-          succes: { eau: 5, texte: "La brèche est colmatée à temps." },
-          echec:  { eau: 30, coque: -15, texte: "Le temps de colmater, le fond de cale a pris l'eau." } },
-        { texte: "Pomper jour et nuit", test: null,
-          succes: { eau: 15, sante: -4, texte: "L'équipage pompe sans relâche." } }
+        { texte: "Envoyer quelqu'un colmater la brèche", envoi: { salle: "cible", competence: "charpente" },
+          test: { competence: "charpente", base: 0.3, parPoint: 0.6 },
+          succes: { eauCible: 5, texte: "La brèche est colmatée à temps." },
+          echec:  { eauCible: 30, coque: -15, blesseEnvoye: 10, texte: "Le temps de colmater, la cale a pris l'eau et le marin s'est blessé." } },
+        { texte: "Pomper tous ensemble", test: null,
+          succes: { eauCible: 15, sante: -4, texte: "L'équipage pompe sans relâche." } }
+      ] },
+
+    { id: "incendie", titre: "Le feu à bord !", icone: "🔥", theme: "danger", chanceParJour: 0.03, cible: "coquerie",
+      texte: "Le fourneau s'est renversé : la {salle} prend feu !",
+      choix: [
+        { texte: "Envoyer quelqu'un étouffer les flammes", envoi: { salle: "cible", competence: "cuisine" },
+          test: { competence: "cuisine", base: 0.35, parPoint: 0.5 },
+          succes: { coque: -3, texte: "Le feu est étouffé sous des couvertures mouillées." },
+          echec:  { coque: -18, blesseEnvoye: 25, moral: -6, texte: "Les flammes lèchent le pont avant d'être maîtrisées. Le marin est brûlé." } },
+        { texte: "Faire la chaîne avec des seaux", test: null,
+          succes: { coque: -8, sante: -3, texte: "Tout l'équipage se relaie : le feu s'éteint, la coquerie est noircie." } }
+      ] },
+
+    { id: "homme_mer", titre: "Un homme à la mer !", icone: "🛟", theme: "orage", chanceParJour: 0.03,
+      texte: "Une lame balaie le pont : un marin passe par-dessus bord !",
+      choix: [
+        { texte: "Envoyer quelqu'un le repérer et lancer un cordage", envoi: { salle: "pont", competence: "vigie" },
+          test: { competence: "vigie", base: 0.5, parPoint: 0.4 },
+          succes: { moral: 4, cohesion: 4, texte: "Le cordage arrive pile : on le hisse à bord, trempé mais vivant." },
+          echec:  { blesse: 30, moral: -6, texte: "Il faut de longues minutes pour le repêcher. Il est en piteux état." } },
+        { texte: "Virer de bord et le repêcher (1 jour)", test: null,
+          succes: { jours: 1, blesse: 10, texte: "La manœuvre prend du temps, mais il est sauf." } }
       ] },
 
     { id: "hostile", titre: "Voile hostile", icone: "🏴‍☠️", theme: "danger", chanceParJour: 0.07,
